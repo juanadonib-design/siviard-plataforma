@@ -19,7 +19,7 @@ import {
   FlaskConical, Microscope, Telescope, Compass, Map, Waypoints,
   FileSearch, FileLock2, FileCheck2, FileBarChart2,
   UserCheck, UserX, UserPlus, UsersRound,
-  SlidersHorizontal, ToggleRight, Gauge, Sliders,
+  SliderHorizontal, ToggleRight, Gauge, Sliders,
   BrainCircuit, ScanFace, KeyRound, Unplug,
   ChartNoAxesCombined, ChartPie, ChartArea, ChartColumnBig,
   ArrowUpRight, ArrowDownRight, TriangleAlert, CircleCheck,
