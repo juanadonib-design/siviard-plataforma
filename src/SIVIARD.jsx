@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   LayoutDashboard, FilePlus2, ClipboardList, CheckCircle2, ShieldCheck,
   BarChart3, Users, Settings, Bell, LogOut, Menu,
@@ -250,6 +250,90 @@ export default function SIVIARD() {
   const [fEst, setFEst] = useState("Todos");
   const [selSol, setSelSol] = useState(null);
   const [hovNav, setHovNav] = useState(null);
+
+  // ── FLUJO EDITOR STATE ──
+  const [flujoSteps, setFlujoSteps] = useState([
+    { id:"s1", label:"Solicitante",  ic:"FilePlus2",  color:"#2563EB", responsable:"Sistema SIVIARD",       suplente:"—",                    locked:true  },
+    { id:"s2", label:"Supervisor",   ic:"UserCog",    color:"#8B5CF6", responsable:"Dir. Martínez Ruiz",    suplente:"Lic. Pérez Santos",     locked:false },
+    { id:"s3", label:"Director",     ic:"Crown",      color:"#F59E0B", responsable:"Min. Rodríguez López",  suplente:"Dir. García Núñez",     locked:false },
+    { id:"s4", label:"Finanzas",     ic:"BarChart2",  color:"#10B981", responsable:"Dpto. Finanzas",        suplente:"Cont. Vargas Herrera",  locked:false },
+    { id:"s5", label:"Auditoría",    ic:"Radar",      color:"#06B6D4", responsable:"Unidad de Auditoría",   suplente:"—",                    locked:true  },
+  ]);
+  const [flujoModalOpen, setFlujoModalOpen]   = useState(false);
+  const [editingStep,    setEditingStep]       = useState(null);   // null = new, obj = editing
+  const [hoveredStep,    setHoveredStep]       = useState(null);
+  const [stepForm, setStepForm] = useState({ label:"", ic:"UserCheck", color:"#8B5CF6", responsable:"", suplente:"" });
+
+  // Icon catalogue for selector
+  const ICON_CATALOGUE = [
+    { key:"UserCog",    Ic:UserCog,    label:"Supervisor"   },
+    { key:"Crown",      Ic:Crown,      label:"Director"     },
+    { key:"BarChart2",  Ic:BarChart2,  label:"Finanzas"     },
+    { key:"Shield",     Ic:Shield,     label:"Seguridad"    },
+    { key:"Building2",  Ic:Building2,  label:"Institución"  },
+    { key:"UserCheck",  Ic:UserCheck,  label:"Validador"    },
+    { key:"DollarSign", Ic:DollarSign, label:"Tesorería"    },
+    { key:"FileCheck2", Ic:FileCheck2, label:"Revisión"     },
+    { key:"Briefcase",  Ic:Briefcase,  label:"RRHH"         },
+    { key:"Database",   Ic:Database,   label:"Registros"    },
+    { key:"Workflow",   Ic:Workflow,   label:"Proceso"      },
+    { key:"ShieldCheck",Ic:ShieldCheck,label:"Compliance"   },
+  ];
+
+  const COLOR_PALETTE = [
+    "#2563EB","#8B5CF6","#F59E0B","#10B981","#EF4444",
+    "#06B6D4","#EC4899","#F97316","#14B8A6","#6366F1",
+  ];
+
+  // Resolve icon component from string key
+  const ICON_MAP = {
+    FilePlus2, UserCog, Crown, BarChart2, Radar, Shield, Building2,
+    UserCheck, DollarSign, FileCheck2, Briefcase, Database, Workflow,
+    ShieldCheck, GitBranch, Star: Star ?? ShieldCheck,
+  };
+  const resolveIc = (key) => ICON_MAP[key] || UserCheck;
+
+  const openNewStep = () => {
+    setEditingStep(null);
+    setStepForm({ label:"", ic:"UserCheck", color:"#8B5CF6", responsable:"", suplente:"" });
+    setFlujoModalOpen(true);
+  };
+  const openEditStep = (step) => {
+    setEditingStep(step);
+    setStepForm({ label:step.label, ic:step.ic, color:step.color, responsable:step.responsable, suplente:step.suplente });
+    setFlujoModalOpen(true);
+  };
+  const saveStep = () => {
+    if (!stepForm.label.trim() || !stepForm.responsable.trim()) return;
+    const newId = "s" + Date.now();
+    setFlujoSteps(prev => {
+      if (editingStep) {
+        return prev.map(s => s.id === editingStep.id ? { ...s, ...stepForm } : s);
+      } else {
+        // Insert before last locked step (Auditoría)
+        const insertIdx = prev.length - 1;
+        const next = [...prev];
+        next.splice(insertIdx, 0, { id:newId, ...stepForm, locked:false });
+        return next;
+      }
+    });
+    setFlujoModalOpen(false);
+  };
+  const deleteStep = (id) => {
+    setFlujoSteps(prev => prev.filter(s => s.id !== id));
+  };
+  const moveStep = (id, dir) => {
+    setFlujoSteps(prev => {
+      const idx = prev.findIndex(s => s.id === id);
+      const newArr = [...prev];
+      const swapIdx = dir === "up" ? idx - 1 : idx + 1;
+      // Never swap with locked extremes
+      if (swapIdx < 0 || swapIdx >= newArr.length) return prev;
+      if (newArr[swapIdx].locked) return prev;
+      [newArr[idx], newArr[swapIdx]] = [newArr[swapIdx], newArr[idx]];
+      return newArr;
+    });
+  };
 
   useEffect(() => { setTimeout(() => setLoading(false), 1900); }, []);
   const notify = (msg, type="success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3600); };
@@ -837,35 +921,139 @@ export default function SIVIARD() {
   );
 
   /* ─── APROBACION ─── */
-  const Aprobacion = () => (
+  const Aprobacion = () => {
+    // Local tooltip state inside the component to avoid re-render propagation
+    const [tooltipStep, setTooltipStep] = useState(null);
+    const [tooltipPos,  setTooltipPos]  = useState({ x:0, y:0 });
+
+    const handleStepEnter = (step, e) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setTooltipStep(step);
+      setTooltipPos({ x: rect.left + rect.width / 2, y: rect.top });
+    };
+    const handleStepLeave = () => setTooltipStep(null);
+
+    return (
     <div style={{ animation:"fadeUp .42s cubic-bezier(.22,1,.36,1)", fontFamily:"'DM Sans',system-ui,sans-serif" }}>
+
+      {/* ── HEADER ── */}
       <div style={{ marginBottom:26 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:11, marginBottom:5 }}>
-          <div style={{ width:4, height:24, borderRadius:2, background:"linear-gradient(180deg,#F59E0B,#EF4444)" }} />
-          <h2 style={{ fontSize:23, fontWeight:900, color:TXT, letterSpacing:-.7 }}>Panel de Aprobaciones</h2>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:11, marginBottom:5 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:11 }}>
+            <div style={{ width:4, height:24, borderRadius:2, background:"linear-gradient(180deg,#F59E0B,#EF4444)" }} />
+            <h2 style={{ fontSize:23, fontWeight:900, color:TXT, letterSpacing:-.7 }}>Panel de Aprobaciones</h2>
+          </div>
+          {/* EDIT FLOW BUTTON */}
+          <button
+            className="act-btn"
+            onClick={() => setFlujoModalOpen(true)}
+            style={{ padding:"9px 18px", background:"linear-gradient(135deg,rgba(139,92,246,.18),rgba(37,99,235,.18))", border:"1px solid rgba(139,92,246,.35)", borderRadius:12, color:"#A78BFA", fontSize:12, fontWeight:800, justifyContent:"center", gap:7, backdropFilter:"blur(8px)" }}
+          >
+            <Ico ic={SliderHorizontal} size={14} color="#A78BFA"/>
+            Editar Flujo
+            <span style={{ background:"rgba(139,92,246,.25)", borderRadius:6, padding:"1px 7px", fontSize:10, fontWeight:900, color:"#C4B5FD" }}>{flujoSteps.length} pasos</span>
+          </button>
         </div>
-        <p style={{ color:MUT, fontSize:13, paddingLeft:15 }}>Flujo jerárquico de autorización institucional</p>
+        <p style={{ color:MUT, fontSize:13, paddingLeft:15 }}>Flujo jerárquico de autorización institucional · {flujoSteps.length} niveles configurados</p>
       </div>
-      <div style={{ background:CARD, border:`1px solid ${BDR}`, borderRadius:18, padding:26, marginBottom:22 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20 }}>
+
+      {/* ── FLUJO VISUAL DINÁMICO ── */}
+      <div style={{ background:CARD, border:`1px solid ${BDR}`, borderRadius:18, padding:26, marginBottom:22, overflow:"hidden", position:"relative" }}>
+        {/* Background grid decoration */}
+        <div style={{ position:"absolute", inset:0, backgroundImage:"radial-gradient(circle at 1px 1px, rgba(139,92,246,.04) 1px, transparent 0)", backgroundSize:"28px 28px", pointerEvents:"none" }} />
+
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:24, position:"relative" }}>
           <IcoBox ic={Workflow} size={16} color="#8B5CF6" bg="rgba(139,92,246,.1)" pad={9} radius={11} glow />
           <span style={{ fontSize:13, fontWeight:800, color:TXT }}>Flujo de Autorización Jerárquico</span>
+          <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:6, background:"rgba(16,185,129,.08)", border:"1px solid rgba(16,185,129,.2)", borderRadius:8, padding:"5px 12px" }}>
+            <div style={{ width:6, height:6, borderRadius:"50%", background:"#10B981", animation:"statusPulse 2.5s ease-in-out infinite" }}/>
+            <span style={{ fontSize:10.5, fontWeight:700, color:"#10B981" }}>Flujo activo</span>
+          </div>
         </div>
-        <div style={{ display:"flex", alignItems:"center", overflowX:"auto", gap:0 }}>
-          {[["Solicitante",FilePlus2,"#2563EB"],["Supervisor",UserCog,"#8B5CF6"],["Director",Crown,"#F59E0B"],["Finanzas",BarChart2,"#10B981"],["Auditoría",Radar,"#06B6D4"]].map(([r,Ic,c],i)=>(
-            <div key={r} style={{ display:"flex", alignItems:"center", flex:1 }}>
-              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:9, flex:1, padding:"0 4px" }}>
-                <div style={{ width:52, height:52, borderRadius:16, background:`${c}12`, border:`2px solid ${c}28`, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 6px 20px ${c}20`, transition:"all .25s" }} onMouseOver={e=>{e.currentTarget.style.transform="translateY(-4px) scale(1.08)";e.currentTarget.style.boxShadow=`0 12px 28px ${c}35`}} onMouseOut={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow=`0 6px 20px ${c}20`}}>
-                  <Ico ic={Ic} size={23} color={c}/>
+
+        {/* STEP NODES — dynamic .map() from flujoSteps state */}
+        <div style={{ display:"flex", alignItems:"flex-start", overflowX:"auto", gap:0, paddingBottom:8, position:"relative" }}>
+          {flujoSteps.map((step, i) => {
+            const Ic = resolveIc(step.ic);
+            const isFirst = i === 0;
+            const isLast  = i === flujoSteps.length - 1;
+            const nextStep = flujoSteps[i + 1];
+
+            return (
+              <div key={step.id} style={{ display:"flex", alignItems:"center", flex:1, minWidth:0 }}>
+                {/* NODE */}
+                <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:10, flex:1, padding:"0 6px", position:"relative" }}>
+
+                  {/* ICON BUBBLE */}
+                  <div
+                    style={{ position:"relative", cursor:"pointer" }}
+                    onMouseEnter={e => handleStepEnter(step, e)}
+                    onMouseLeave={handleStepLeave}
+                  >
+                    {/* Lock badge for immutable steps */}
+                    {step.locked && (
+                      <div style={{ position:"absolute", top:-6, right:-6, zIndex:2, width:18, height:18, borderRadius:"50%", background: isFirst ? "linear-gradient(135deg,#2563EB,#0891B2)" : "linear-gradient(135deg,#06B6D4,#0891B2)", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 2px 8px rgba(0,0,0,.3)", border:`2px solid ${CARD}` }}>
+                        <Ico ic={Lock} size={8} color="#fff" />
+                      </div>
+                    )}
+                    {/* Step number badge */}
+                    <div style={{ position:"absolute", top:-7, left:-7, zIndex:2, width:17, height:17, borderRadius:"50%", background:"rgba(0,0,0,.55)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:900, color:"rgba(255,255,255,.7)", fontFamily:"'JetBrains Mono',monospace", border:`1px solid ${step.color}44` }}>
+                      {i+1}
+                    </div>
+                    {/* Main icon circle */}
+                    <div
+                      style={{ width:56, height:56, borderRadius:18, background:`${step.color}14`, border:`2px solid ${step.color}30`, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 6px 22px ${step.color}22`, transition:"all .28s cubic-bezier(.34,1.56,.64,1)" }}
+                      onMouseOver={e => { e.currentTarget.style.transform = "translateY(-5px) scale(1.1)"; e.currentTarget.style.boxShadow = `0 14px 32px ${step.color}40`; e.currentTarget.style.borderColor = `${step.color}70`; }}
+                      onMouseOut={e  => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = `0 6px 22px ${step.color}22`; e.currentTarget.style.borderColor = `${step.color}30`; }}
+                    >
+                      <Ico ic={Ic} size={24} color={step.color} />
+                    </div>
+                    {/* Glow ring pulse for locked steps */}
+                    {step.locked && (
+                      <div style={{ position:"absolute", inset:-4, borderRadius:22, border:`1px solid ${step.color}30`, animation:"pulseRing 2.5s ease-out infinite", pointerEvents:"none" }} />
+                    )}
+                  </div>
+
+                  {/* Color accent bar */}
+                  <div style={{ width:28, height:3, borderRadius:2, background:`linear-gradient(90deg,${step.color},${step.color}55)` }} />
+
+                  {/* Label */}
+                  <div style={{ textAlign:"center" }}>
+                    <span style={{ fontSize:11, fontWeight:700, color:TXT, display:"block", letterSpacing:.1 }}>{step.label}</span>
+                    {step.locked
+                      ? <span style={{ fontSize:9.5, color:step.color, fontWeight:700, letterSpacing:.5, fontFamily:"'JetBrains Mono',monospace" }}>{isFirst ? "INICIO" : "FINAL"}</span>
+                      : <span style={{ fontSize:9.5, color:MUT, letterSpacing:.2 }}>Nivel {i}</span>
+                    }
+                  </div>
                 </div>
-                <div style={{ width:26, height:3, borderRadius:2, background:`linear-gradient(90deg,${c},${c}66)` }}/>
-                <span style={{ fontSize:11, fontWeight:700, color:TXT, textAlign:"center" }}>{r}</span>
+
+                {/* CONNECTOR ARROW between nodes */}
+                {!isLast && (
+                  <div style={{ display:"flex", flexDirection:"column", alignItems:"center", flexShrink:0, width:28, marginBottom:32 }}>
+                    <div style={{ width:"100%", height:2, background:`linear-gradient(90deg,${step.color},${nextStep?.color || step.color})`, borderRadius:1, position:"relative" }}>
+                      {/* Arrow head */}
+                      <div style={{ position:"absolute", right:-1, top:"50%", transform:"translateY(-50%)", width:0, height:0, borderTop:"4px solid transparent", borderBottom:"4px solid transparent", borderLeft:`6px solid ${nextStep?.color || step.color}` }} />
+                    </div>
+                  </div>
+                )}
               </div>
-              {i<4 && <div style={{ height:2, width:18, flexShrink:0, background:`linear-gradient(90deg,${c},${["#8B5CF6","#F59E0B","#10B981","#06B6D4"][i]})`, borderRadius:1, margin:"0 2px 22px" }}/>}
-            </div>
-          ))}
+            );
+          })}
+        </div>
+
+        {/* PROGRESS BAR */}
+        <div style={{ marginTop:20, paddingTop:18, borderTop:`1px solid ${BDR}` }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+            <span style={{ fontSize:11, color:MUT, fontWeight:600 }}>Progreso del flujo configurado</span>
+            <span style={{ fontSize:11, color:"#10B981", fontWeight:800, fontFamily:"'JetBrains Mono',monospace" }}>{flujoSteps.length} / {flujoSteps.length} niveles</span>
+          </div>
+          <div style={{ height:4, borderRadius:2, background:`${BDR}`, overflow:"hidden" }}>
+            <div style={{ height:"100%", width:"100%", background:"linear-gradient(90deg,#2563EB,#8B5CF6,#F59E0B,#10B981,#06B6D4)", backgroundSize:"300%", animation:"gradShift 4s ease infinite", borderRadius:2 }} />
+          </div>
         </div>
       </div>
+
+      {/* ── PENDING SOLICITUDES ── */}
       <div style={{ display:"flex", flexDirection:"column", gap:13 }}>
         {SOLICITUDES.filter(s=>s.estado==="Pendiente"||s.estado==="En Revisión").map(s=>(
           <div key={s.id} className="hover-lift" style={{ background:CARD, borderRadius:18, border:`1px solid ${BDR}`, padding:22 }}>
@@ -880,6 +1068,23 @@ export default function SIVIARD() {
                   {[[MapPinned,s.provincia,"#06B6D4"],[Calendar,s.fecha,MUT],[DollarSign,`RD$ ${s.monto.toLocaleString()}`,s.monto>0?"#10B981":MUT]].map(([Ic,v,c],j)=>(
                     <div key={j} style={{ display:"flex",alignItems:"center",gap:5,fontSize:12 }}><Ico ic={Ic} size={13} color={c}/><span style={{ color:c }}>{v}</span></div>
                   ))}
+                </div>
+                {/* Mini flujo progress indicator */}
+                <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:12 }}>
+                  {flujoSteps.map((step, i) => {
+                    const StepIc = resolveIc(step.ic);
+                    const done = i === 0;
+                    const active = i === 1;
+                    return (
+                      <div key={step.id} style={{ display:"flex", alignItems:"center", gap:4 }}>
+                        <div title={step.label} style={{ width:22, height:22, borderRadius:7, background: done ? `${step.color}22` : active ? `${step.color}18` : "rgba(100,116,139,.06)", border:`1.5px solid ${done || active ? step.color+"44" : BDR}`, display:"flex", alignItems:"center", justifyContent:"center", opacity: done || active ? 1 : 0.4 }}>
+                          <StepIc size={11} color={done || active ? step.color : MUT} strokeWidth={1.8} />
+                        </div>
+                        {i < flujoSteps.length - 1 && <div style={{ width:10, height:1.5, background: done ? `linear-gradient(90deg,${step.color},${flujoSteps[i+1]?.color})` : BDR, borderRadius:1 }} />}
+                      </div>
+                    );
+                  })}
+                  <span style={{ fontSize:10, color:"#F59E0B", fontWeight:700, marginLeft:4 }}>En: {flujoSteps[1]?.label}</span>
                 </div>
               </div>
               <div style={{ display:"flex", gap:9, flexShrink:0 }}>
@@ -897,8 +1102,348 @@ export default function SIVIARD() {
           </div>
         ))}
       </div>
+
+      {/* ── FLOATING TOOLTIP ── */}
+      {tooltipStep && (
+        <div
+          style={{ position:"fixed", left: tooltipPos.x, top: tooltipPos.y - 8, transform:"translate(-50%, -100%)", zIndex:9998, pointerEvents:"none", animation:"fadeUp .18s cubic-bezier(.22,1,.36,1)" }}
+        >
+          <div style={{ background:"rgba(9,15,30,.96)", border:`1px solid ${tooltipStep.color}44`, borderRadius:14, padding:"13px 16px", minWidth:200, boxShadow:`0 20px 50px rgba(0,0,0,.55), 0 0 0 1px ${tooltipStep.color}22`, backdropFilter:"blur(20px)" }}>
+            {/* Header row */}
+            <div style={{ display:"flex", alignItems:"center", gap:9, marginBottom:11, paddingBottom:10, borderBottom:`1px solid rgba(255,255,255,.06)` }}>
+              <div style={{ width:32, height:32, borderRadius:10, background:`${tooltipStep.color}20`, border:`1.5px solid ${tooltipStep.color}40`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                <Ico ic={resolveIc(tooltipStep.ic)} size={16} color={tooltipStep.color} />
+              </div>
+              <div>
+                <div style={{ fontSize:13, fontWeight:800, color:"#F1F5F9", letterSpacing:-.2 }}>{tooltipStep.label}</div>
+                {tooltipStep.locked && <div style={{ fontSize:9, color:tooltipStep.color, fontWeight:700, letterSpacing:1, fontFamily:"'JetBrains Mono',monospace" }}>NIVEL PERMANENTE</div>}
+              </div>
+            </div>
+            {/* Info rows */}
+            {[
+              [UserCheck,  "Responsable",  tooltipStep.responsable, "#10B981"],
+              [UserX,      "Suplente",      tooltipStep.suplente || "—", "#F59E0B"],
+              [Lock,       "Tipo",         tooltipStep.locked ? "Inmutable" : "Configurable", tooltipStep.locked ? "#EF4444" : "#06B6D4"],
+            ].map(([TooltipIc, lbl, val, c]) => (
+              <div key={lbl} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:7 }}>
+                <div style={{ width:22, height:22, borderRadius:7, background:`${c}15`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                  <TooltipIc size={11} color={c} strokeWidth={1.9} />
+                </div>
+                <div>
+                  <div style={{ fontSize:9, color:"rgba(148,163,184,.7)", fontWeight:600, letterSpacing:.6 }}>{lbl.toUpperCase()}</div>
+                  <div style={{ fontSize:12, color:"#E2E8F0", fontWeight:600 }}>{val}</div>
+                </div>
+              </div>
+            ))}
+            {/* Arrow pointer */}
+            <div style={{ position:"absolute", bottom:-7, left:"50%", transform:"translateX(-50%)", width:0, height:0, borderLeft:"7px solid transparent", borderRight:"7px solid transparent", borderTop:`7px solid ${tooltipStep.color}44` }} />
+          </div>
+        </div>
+      )}
+
+      {/* ── EDITOR MODAL ── */}
+      {flujoModalOpen && (
+        <div
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.72)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:20, animation:"fadeIn .2s ease" }}
+          onClick={e => { if(e.target===e.currentTarget) setFlujoModalOpen(false); }}
+        >
+          <div style={{ background: dark?"#111827":"#FFFFFF", borderRadius:24, border:`1px solid ${BDR}`, width:"100%", maxWidth:820, maxHeight:"92vh", overflow:"auto", boxShadow:"0 48px 120px rgba(0,0,0,.45)", animation:"fadeUp .3s cubic-bezier(.22,1,.36,1)" }}>
+
+            {/* Modal header */}
+            <div style={{ padding:"22px 26px", borderBottom:`1px solid ${BDR}`, display:"flex", justifyContent:"space-between", alignItems:"center", background: dark?"rgba(139,92,246,.05)":"rgba(139,92,246,.03)" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:13 }}>
+                <IcoBox ic={Workflow} size={18} color="#8B5CF6" bg="linear-gradient(135deg,rgba(139,92,246,.25),rgba(37,99,235,.15))" pad={10} radius={13} glow />
+                <div>
+                  <div style={{ fontSize:16, fontWeight:900, color:TXT }}>Diseñador del Flujo de Aprobación</div>
+                  <div style={{ fontSize:11, color:MUT, marginTop:2 }}>Gestione los niveles intermedios de autorización institucional</div>
+                </div>
+              </div>
+              <button className="ic-btn topbar-ico" onClick={()=>setFlujoModalOpen(false)} style={{ width:38,height:38,borderRadius:12,border:`1px solid ${BDR}` }}>
+                <Ico ic={XCircle} size={18} color={MUT}/>
+              </button>
+            </div>
+
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 340px", gap:0, minHeight:500 }}>
+
+              {/* LEFT: Step list manager */}
+              <div style={{ padding:"22px 24px", borderRight:`1px solid ${BDR}` }}>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18 }}>
+                  <div style={{ fontSize:13, fontWeight:800, color:TXT }}>Niveles del Flujo</div>
+                  <button
+                    className="act-btn"
+                    onClick={openNewStep}
+                    style={{ padding:"8px 15px", background:"linear-gradient(135deg,#2563EB,#0891B2)", border:"none", borderRadius:10, color:"#fff", fontSize:12, fontWeight:800, justifyContent:"center", gap:6, boxShadow:"0 6px 16px rgba(37,99,235,.3)" }}
+                  >
+                    <Ico ic={UserPlus} size={13} color="#fff"/>
+                    Añadir Nivel
+                  </button>
+                </div>
+
+                {/* Rules info banner */}
+                <div style={{ display:"flex", alignItems:"flex-start", gap:10, background:"rgba(245,158,11,.06)", border:"1px solid rgba(245,158,11,.2)", borderRadius:12, padding:"10px 13px", marginBottom:16 }}>
+                  <Ico ic={TriangleAlert} size={14} color="#F59E0B" style={{ flexShrink:0, marginTop:1 }} />
+                  <div style={{ fontSize:11, color: dark?"#FEF3C7":"#92400E", lineHeight:1.6 }}>
+                    Los niveles <strong>Solicitante</strong> y <strong>Auditoría</strong> son permanentes e inmutables. Solo los niveles intermedios pueden modificarse.
+                  </div>
+                </div>
+
+                {/* Step rows */}
+                <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
+                  {flujoSteps.map((step, i) => {
+                    const StepIc = resolveIc(step.ic);
+                    const isFirst = i === 0;
+                    const isLast  = i === flujoSteps.length - 1;
+                    return (
+                      <div
+                        key={step.id}
+                        style={{ display:"flex", alignItems:"center", gap:12, padding:"13px 15px", borderRadius:13, border:`1.5px solid ${step.locked ? step.color+"30" : BDR}`, background: step.locked ? `${step.color}07` : dark?"rgba(255,255,255,.02)":"#FAFAFA", transition:"all .2s" }}
+                        onMouseOver={e => !step.locked && (e.currentTarget.style.borderColor = `${step.color}50`)}
+                        onMouseOut={e  => !step.locked && (e.currentTarget.style.borderColor = BDR)}
+                      >
+                        {/* Drag handle / order number */}
+                        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2, flexShrink:0 }}>
+                          <span style={{ fontSize:11, fontWeight:900, color:step.color, fontFamily:"'JetBrains Mono',monospace", lineHeight:1 }}>{String(i+1).padStart(2,"0")}</span>
+                          {!step.locked && (
+                            <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                              <button className="ic-btn" disabled={i <= 1} onClick={()=>moveStep(step.id,"up")} style={{ opacity: i<=1?0.25:1, padding:0, width:14, height:14 }}>
+                                <Ico ic={ChevronLeft} size={11} color={MUT} style={{ transform:"rotate(90deg)" }}/>
+                              </button>
+                              <button className="ic-btn" disabled={i >= flujoSteps.length-2} onClick={()=>moveStep(step.id,"down")} style={{ opacity: i>=flujoSteps.length-2?0.25:1, padding:0, width:14, height:14 }}>
+                                <Ico ic={ChevronRight} size={11} color={MUT} style={{ transform:"rotate(90deg)" }}/>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Icon */}
+                        <div style={{ width:38, height:38, borderRadius:11, background:`${step.color}15`, border:`1.5px solid ${step.color}30`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                          <StepIc size={18} color={step.color} strokeWidth={1.7} />
+                        </div>
+
+                        {/* Info */}
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                            <span style={{ fontSize:13, fontWeight:800, color:TXT }}>{step.label}</span>
+                            {step.locked && (
+                              <span style={{ display:"inline-flex", alignItems:"center", gap:4, background:`${step.color}15`, border:`1px solid ${step.color}30`, borderRadius:6, padding:"1px 7px", fontSize:9, fontWeight:700, color:step.color, letterSpacing:.5 }}>
+                                <Ico ic={Lock} size={8} color={step.color} />FIJO
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize:11, color:MUT, marginTop:2, display:"flex", alignItems:"center", gap:8 }}>
+                            <span style={{ display:"flex", alignItems:"center", gap:4 }}>
+                              <Ico ic={UserCheck} size={10} color={MUT}/>{step.responsable}
+                            </span>
+                            {step.suplente && step.suplente !== "—" && (
+                              <span style={{ display:"flex", alignItems:"center", gap:4 }}>
+                                <Ico ic={UserX} size={10} color={MUT}/>{step.suplente}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+                          {!step.locked && (
+                            <>
+                              <button
+                                className="ic-btn topbar-ico"
+                                onClick={()=>openEditStep(step)}
+                                title="Editar nivel"
+                                style={{ width:30,height:30,borderRadius:9,background:"rgba(37,99,235,.09)",border:"none" }}
+                              >
+                                <Ico ic={Edit3} size={13} color="#2563EB"/>
+                              </button>
+                              <button
+                                className="ic-btn topbar-ico"
+                                onClick={()=>{ if(window.confirm(`¿Eliminar el nivel "${step.label}"?`)) deleteStep(step.id); }}
+                                title="Eliminar nivel"
+                                style={{ width:30,height:30,borderRadius:9,background:"rgba(239,68,68,.08)",border:"none" }}
+                              >
+                                <Ico ic={Trash2} size={13} color="#EF4444"/>
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Live mini-preview of the flow */}
+                <div style={{ marginTop:20, paddingTop:16, borderTop:`1px solid ${BDR}` }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:MUT, marginBottom:10, letterSpacing:.5 }}>VISTA PREVIA DEL FLUJO</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:4, flexWrap:"wrap" }}>
+                    {flujoSteps.map((step, i) => {
+                      const StepIc = resolveIc(step.ic);
+                      return (
+                        <div key={step.id} style={{ display:"flex", alignItems:"center", gap:4 }}>
+                          <div title={step.label} style={{ width:28, height:28, borderRadius:9, background:`${step.color}15`, border:`1.5px solid ${step.color}35`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                            <StepIc size={13} color={step.color} strokeWidth={1.7} />
+                          </div>
+                          {i < flujoSteps.length - 1 && (
+                            <div style={{ display:"flex", alignItems:"center", gap:1 }}>
+                              <div style={{ width:10, height:1.5, background:`linear-gradient(90deg,${step.color},${flujoSteps[i+1]?.color})`, borderRadius:1 }} />
+                              <div style={{ width:0, height:0, borderTop:"3px solid transparent", borderBottom:"3px solid transparent", borderLeft:`4px solid ${flujoSteps[i+1]?.color}` }} />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ marginTop:8, fontSize:10, color:MUT }}>{flujoSteps.length} niveles · {flujoSteps.filter(s=>!s.locked).length} configurables · 2 permanentes</div>
+                </div>
+              </div>
+
+              {/* RIGHT: Add/Edit form */}
+              <div style={{ padding:"22px 24px", background: dark?"rgba(255,255,255,.015)":"rgba(248,250,252,1)" }}>
+                <div style={{ fontSize:13, fontWeight:800, color:TXT, marginBottom:18, display:"flex", alignItems:"center", gap:8 }}>
+                  <IcoBox ic={editingStep ? Edit3 : UserPlus} size={13} color="#2563EB" bg="rgba(37,99,235,.1)" pad={7} radius={8} />
+                  {editingStep ? `Editar: ${editingStep.label}` : "Nuevo Nivel de Aprobación"}
+                </div>
+
+                {/* Nombre del nivel */}
+                <div style={{ marginBottom:14 }}>
+                  <label style={{ display:"flex", alignItems:"center", gap:5, fontSize:10.5, fontWeight:700, color:MUT, marginBottom:8, letterSpacing:.8 }}>
+                    <Ico ic={Briefcase} size={11} color={MUT}/> NOMBRE DEL NIVEL / CARGO
+                  </label>
+                  <input
+                    value={stepForm.label}
+                    placeholder="Ej: Director de RRHH"
+                    onChange={e=>setStepForm(p=>({...p,label:e.target.value}))}
+                    style={{ width:"100%", padding:"11px 13px", borderRadius:10, border:`1px solid ${BDR}`, background: dark?"rgba(15,23,42,.5)":"#fff", color:TXT, fontSize:13 }}
+                  />
+                </div>
+
+                {/* Responsable */}
+                <div style={{ marginBottom:14 }}>
+                  <label style={{ display:"flex", alignItems:"center", gap:5, fontSize:10.5, fontWeight:700, color:MUT, marginBottom:8, letterSpacing:.8 }}>
+                    <Ico ic={UserCheck} size={11} color={MUT}/> RESPONSABLE PRIMARIO
+                  </label>
+                  <input
+                    value={stepForm.responsable}
+                    placeholder="Ej: Lic. García Rodríguez"
+                    onChange={e=>setStepForm(p=>({...p,responsable:e.target.value}))}
+                    style={{ width:"100%", padding:"11px 13px", borderRadius:10, border:`1px solid ${BDR}`, background: dark?"rgba(15,23,42,.5)":"#fff", color:TXT, fontSize:13 }}
+                  />
+                </div>
+
+                {/* Suplente */}
+                <div style={{ marginBottom:16 }}>
+                  <label style={{ display:"flex", alignItems:"center", gap:5, fontSize:10.5, fontWeight:700, color:MUT, marginBottom:8, letterSpacing:.8 }}>
+                    <Ico ic={UserX} size={11} color={MUT}/> USUARIO SUPLENTE
+                  </label>
+                  <input
+                    value={stepForm.suplente}
+                    placeholder="Ej: Dra. Méndez Castillo"
+                    onChange={e=>setStepForm(p=>({...p,suplente:e.target.value}))}
+                    style={{ width:"100%", padding:"11px 13px", borderRadius:10, border:`1px solid ${BDR}`, background: dark?"rgba(15,23,42,.5)":"#fff", color:TXT, fontSize:13 }}
+                  />
+                </div>
+
+                {/* Color selector */}
+                <div style={{ marginBottom:16 }}>
+                  <label style={{ display:"flex", alignItems:"center", gap:5, fontSize:10.5, fontWeight:700, color:MUT, marginBottom:10, letterSpacing:.8 }}>
+                    <Ico ic={Sliders} size={11} color={MUT}/> COLOR DEL NIVEL
+                  </label>
+                  <div style={{ display:"flex", gap:7, flexWrap:"wrap" }}>
+                    {COLOR_PALETTE.map(c => (
+                      <div
+                        key={c}
+                        onClick={()=>setStepForm(p=>({...p,color:c}))}
+                        style={{ width:26, height:26, borderRadius:8, background:c, cursor:"pointer", border:`2.5px solid ${stepForm.color===c?"#fff":"transparent"}`, boxShadow: stepForm.color===c?`0 0 0 2px ${c}, 0 4px 12px ${c}55`:"none", transition:"all .18s cubic-bezier(.34,1.56,.64,1)", transform: stepForm.color===c?"scale(1.2)":"scale(1)" }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Icon selector */}
+                <div style={{ marginBottom:20 }}>
+                  <label style={{ display:"flex", alignItems:"center", gap:5, fontSize:10.5, fontWeight:700, color:MUT, marginBottom:10, letterSpacing:.8 }}>
+                    <Ico ic={Layers} size={11} color={MUT}/> ÍCONO REPRESENTATIVO
+                  </label>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:7 }}>
+                    {ICON_CATALOGUE.map(({ key, Ic: CatIc, label: catLabel }) => (
+                      <div
+                        key={key}
+                        onClick={()=>setStepForm(p=>({...p,ic:key}))}
+                        title={catLabel}
+                        style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:4, padding:"9px 4px", borderRadius:10, border:`1.5px solid ${stepForm.ic===key ? stepForm.color : BDR}`, background: stepForm.ic===key ? `${stepForm.color}15` : dark?"rgba(255,255,255,.02)":"#fff", cursor:"pointer", transition:"all .18s", boxShadow: stepForm.ic===key ? `0 4px 12px ${stepForm.color}30` : "none" }}
+                        onMouseOver={e => stepForm.ic!==key && (e.currentTarget.style.borderColor = stepForm.color+"50")}
+                        onMouseOut={e  => stepForm.ic!==key && (e.currentTarget.style.borderColor = BDR)}
+                      >
+                        <CatIc size={18} color={stepForm.ic===key ? stepForm.color : MUT} strokeWidth={1.7} />
+                        <span style={{ fontSize:9, color: stepForm.ic===key ? stepForm.color : MUT, fontWeight:700, textAlign:"center", letterSpacing:.2 }}>{catLabel}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Preview mini card */}
+                <div style={{ marginBottom:18, padding:"13px 14px", borderRadius:12, border:`1.5px solid ${stepForm.color}35`, background:`${stepForm.color}08` }}>
+                  <div style={{ fontSize:10, color:MUT, fontWeight:700, marginBottom:9, letterSpacing:.5 }}>VISTA PREVIA</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <div style={{ width:38, height:38, borderRadius:11, background:`${stepForm.color}18`, border:`1.5px solid ${stepForm.color}40`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                      {(() => { const PreviewIc = resolveIc(stepForm.ic); return <PreviewIc size={18} color={stepForm.color} strokeWidth={1.7} />; })()}
+                    </div>
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:800, color:TXT }}>{stepForm.label || "Nombre del nivel"}</div>
+                      <div style={{ fontSize:11, color:MUT }}>{stepForm.responsable || "Responsable"}</div>
+                      {stepForm.suplente && <div style={{ fontSize:10, color:MUT, opacity:.7 }}>Suplente: {stepForm.suplente}</div>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Save / Cancel */}
+                <div style={{ display:"flex", gap:9 }}>
+                  <button
+                    className="act-btn"
+                    onClick={saveStep}
+                    disabled={!stepForm.label.trim() || !stepForm.responsable.trim()}
+                    style={{ flex:1, padding:"12px", background: (!stepForm.label.trim()||!stepForm.responsable.trim()) ? "#9CA3AF" : `linear-gradient(135deg,${stepForm.color},${stepForm.color}cc)`, borderRadius:11, color:"#fff", fontSize:13, fontWeight:800, justifyContent:"center", border:"none", boxShadow: (!stepForm.label.trim()||!stepForm.responsable.trim()) ? "none" : `0 6px 18px ${stepForm.color}40` }}
+                  >
+                    <Ico ic={CircleCheck} size={15} color="#fff"/>
+                    {editingStep ? "Guardar Cambios" : "Agregar Nivel"}
+                  </button>
+                  <button
+                    className="act-btn"
+                    onClick={()=>{ setFlujoModalOpen(false); setEditingStep(null); }}
+                    style={{ padding:"12px 16px", border:`1px solid ${BDR}`, borderRadius:11, background:"transparent", color:MUT, justifyContent:"center" }}
+                  >
+                    <Ico ic={XCircle} size={15} color={MUT}/>
+                  </button>
+                </div>
+
+                {editingStep && (
+                  <div style={{ marginTop:10, padding:"9px 13px", borderRadius:10, background:"rgba(239,68,68,.05)", border:"1px solid rgba(239,68,68,.15)", display:"flex", alignItems:"center", gap:8 }}>
+                    <Ico ic={TriangleAlert} size={12} color="#EF4444"/>
+                    <span style={{ fontSize:11, color: dark?"#FCA5A5":"#991B1B" }}>Los cambios afectarán todas las solicitudes en curso.</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal footer */}
+            <div style={{ padding:"16px 26px", borderTop:`1px solid ${BDR}`, display:"flex", justifyContent:"space-between", alignItems:"center", background: dark?"rgba(255,255,255,.01)":"rgba(248,250,252,1)" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                <Ico ic={ShieldCheck} size={13} color="#10B981"/>
+                <span style={{ fontSize:11, color:"#10B981", fontWeight:600 }}>Cambios guardados automáticamente en el flujo institucional</span>
+              </div>
+              <button
+                className="act-btn"
+                onClick={()=>{ setFlujoModalOpen(false); notify("Flujo de aprobación actualizado exitosamente"); }}
+                style={{ padding:"10px 22px", background:"linear-gradient(135deg,#10B981,#059669)", borderRadius:11, color:"#fff", fontSize:12, fontWeight:800, justifyContent:"center", border:"none", boxShadow:"0 6px 16px rgba(16,185,129,.28)" }}
+              >
+                <Ico ic={CircleCheck} size={14} color="#fff"/>
+                Confirmar y Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  );
+    );
+  };
 
   /* ─── AUDITORIA ─── */
   const Auditoria = () => (
@@ -1302,6 +1847,5 @@ export default function SIVIARD() {
         </div>
       </div>
     </div>
-    
   );
 }
