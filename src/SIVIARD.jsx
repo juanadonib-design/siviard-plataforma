@@ -251,6 +251,10 @@ export default function SIVIARD() {
   const [selSol, setSelSol] = useState(null);
   const [hovNav, setHovNav] = useState(null);
 
+  // ── TOOLTIP STATE ──
+  const [tooltipStep, setTooltipStep] = useState(null);
+  const [tooltipPos,  setTooltipPos]  = useState({ x:0, y:0 });
+
   // ── FLUJO EDITOR STATE ──
   const [flujoSteps, setFlujoSteps] = useState([
     { id:"s1", label:"Solicitante",  ic:"FilePlus2",  color:"#2563EB", responsable:"Sistema SIVIARD",       suplente:"—",                    locked:true  },
@@ -921,19 +925,14 @@ export default function SIVIARD() {
   );
 
   /* ─── APROBACION ─── */
-  const Aprobacion = () => {
-    // Local tooltip state inside the component to avoid re-render propagation
-    const [tooltipStep, setTooltipStep] = useState(null);
-    const [tooltipPos,  setTooltipPos]  = useState({ x:0, y:0 });
+  const handleStepEnter = (step, e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setTooltipStep(step);
+    setTooltipPos({ x: rect.left + rect.width / 2, y: rect.top });
+  };
+  const handleStepLeave = () => setTooltipStep(null);
 
-    const handleStepEnter = (step, e) => {
-      const rect = e.currentTarget.getBoundingClientRect();
-      setTooltipStep(step);
-      setTooltipPos({ x: rect.left + rect.width / 2, y: rect.top });
-    };
-    const handleStepLeave = () => setTooltipStep(null);
-
-    return (
+  const Aprobacion = () => (
     <div style={{ animation:"fadeUp .42s cubic-bezier(.22,1,.36,1)", fontFamily:"'DM Sans',system-ui,sans-serif" }}>
 
       {/* ── HEADER ── */}
@@ -1256,7 +1255,7 @@ export default function SIVIARD() {
                               </button>
                               <button
                                 className="ic-btn topbar-ico"
-                                onClick={()=>{ if(window.confirm(`¿Eliminar el nivel "${step.label}"?`)) deleteStep(step.id); }}
+                                onClick={()=>deleteStep(step.id)}
                                 title="Eliminar nivel"
                                 style={{ width:30,height:30,borderRadius:9,background:"rgba(239,68,68,.08)",border:"none" }}
                               >
@@ -1442,8 +1441,7 @@ export default function SIVIARD() {
         </div>
       )}
     </div>
-    );
-  };
+  );
 
   /* ─── AUDITORIA ─── */
   const Auditoria = () => (
