@@ -21,7 +21,6 @@ import {
   UserCheck, UserX, UserPlus, UsersRound,
   SlidersHorizontal, ToggleRight, Gauge, Sliders,
   BrainCircuit, ScanFace, KeyRound, Unplug,
-  ChartNoAxesCombined, ChartPie, ChartArea, ChartColumnBig,
   ArrowUpRight, ArrowDownRight, TriangleAlert, CircleCheck,
   Bolt, FlameKindling, Orbit, Atom
 } from "lucide-react";
@@ -361,7 +360,7 @@ export default function SIVIARD() {
 
   // Premium NAV config with upgraded icons and descriptions
   const NAV = [
-    { id:"dashboard",   label:"Dashboard",       ic:ChartNoAxesCombined, color:"#2563EB", bg:"rgba(37,99,235,.18)",  desc:"Visión ejecutiva" },
+    { id:"dashboard",   label:"Dashboard",       ic:BarChart3, color:"#2563EB", bg:"rgba(37,99,235,.18)",  desc:"Visión ejecutiva" },
     { id:"solicitud",   label:"Nueva Solicitud", ic:FilePlus2,           color:"#06B6D4", bg:"rgba(6,182,212,.18)",  desc:"Crear viático" },
     { id:"solicitudes", label:"Solicitudes",     ic:Waypoints,           color:"#10B981", bg:"rgba(16,185,129,.18)", desc:"Gestión completa" },
     { id:"aprobacion",  label:"Aprobaciones",    ic:FileCheck2,          color:"#F59E0B", bg:"rgba(245,158,11,.18)", desc:"Flujo jerárquico" },
@@ -496,7 +495,7 @@ export default function SIVIARD() {
           { lbl:"Total Solicitudes", val:"48",      sub:"+6 esta semana", ic:Waypoints,          ac:"#2563EB", li:"rgba(37,99,235,.1)",  trend:ArrowUpRight, tc:"#10B981" },
           { lbl:"Aprobadas",         val:"31",      sub:"64.6% del total", ic:FileCheck2,         ac:"#10B981", li:"rgba(16,185,129,.1)", trend:ArrowUpRight, tc:"#10B981" },
           { lbl:"Rechazadas",        val:"8",       sub:"2 por alerta DN", ic:FileSearch,         ac:"#EF4444", li:"rgba(239,68,68,.1)",  trend:ArrowDownRight,tc:"#EF4444" },
-          { lbl:"Gasto del Mes",     val:"RD$178K", sub:"↑12% vs anterior", ic:ChartColumnBig,   ac:"#F59E0B", li:"rgba(245,158,11,.1)", trend:ArrowUpRight, tc:"#10B981" },
+          { lbl:"Gasto del Mes",     val:"RD$178K", sub:"↑12% vs anterior", ic:BarChart3,   ac:"#F59E0B", li:"rgba(245,158,11,.1)", trend:ArrowUpRight, tc:"#10B981" },
         ].map((m,i) => (
           <div key={i} className="card hover-lift kpi-ring" style={{ background:CARD, borderRadius:18, padding:"22px 24px", border:`1px solid ${BDR}`, position:"relative", overflow:"hidden" }}>
             <div style={{ position:"absolute", top:-18, right:-18, width:80, height:80, borderRadius:"50%", background:m.li, filter:"blur(2px)" }} />
@@ -546,7 +545,7 @@ export default function SIVIARD() {
         {/* PIE */}
         <div className="card" style={{ background:CARD, borderRadius:18, padding:26, border:`1px solid ${BDR}` }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
-            <IcoBox ic={ChartPie} size={16} color="#8B5CF6" bg="rgba(139,92,246,.1)" pad={9} radius={11} glow />
+            <IcoBox ic={PieIcon} size={16} color="#8B5CF6" bg="rgba(139,92,246,.1)" pad={9} radius={11} glow />
             <div>
               <div style={{ fontSize:14, fontWeight:800, color:TXT }}>Provincias</div>
               <div style={{ fontSize:11, color:MUT }}>Destinos visitados</div>
@@ -948,7 +947,7 @@ export default function SIVIARD() {
             onClick={() => setFlujoModalOpen(true)}
             style={{ padding:"9px 18px", background:"linear-gradient(135deg,rgba(139,92,246,.18),rgba(37,99,235,.18))", border:"1px solid rgba(139,92,246,.35)", borderRadius:12, color:"#A78BFA", fontSize:12, fontWeight:800, justifyContent:"center", gap:7, backdropFilter:"blur(8px)" }}
           >
-            <Ico ic={SliderHorizontal} size={14} color="#A78BFA"/>
+            <Ico ic={SlidersHorizontal} size={14} color="#A78BFA"/>
             Editar Flujo
             <span style={{ background:"rgba(139,92,246,.25)", borderRadius:6, padding:"1px 7px", fontSize:10, fontWeight:900, color:"#C4B5FD" }}>{flujoSteps.length} pasos</span>
           </button>
@@ -1547,7 +1546,7 @@ export default function SIVIARD() {
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:15, marginBottom:15 }}>
         <div style={{ background:CARD, borderRadius:18, padding:26, border:`1px solid ${BDR}` }}>
           <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:20 }}>
-            <IcoBox ic={ChartColumnBig} size={16} color="#2563EB" bg="rgba(37,99,235,.1)" pad={9} radius={11} glow/>
+            <IcoBox ic={BarChart3} size={16} color="#2563EB" bg="rgba(37,99,235,.1)" pad={9} radius={11} glow/>
             <div><div style={{ fontSize:14,fontWeight:800,color:TXT }}>Gastos Mensuales</div><div style={{ fontSize:11,color:MUT }}>RD$ por mes — 2025</div></div>
           </div>
           <ResponsiveContainer width="100%" height={195}>
@@ -1562,7 +1561,7 @@ export default function SIVIARD() {
         </div>
         <div style={{ background:CARD, borderRadius:18, padding:26, border:`1px solid ${BDR}` }}>
           <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:20 }}>
-            <IcoBox ic={ChartPie} size={16} color="#8B5CF6" bg="rgba(139,92,246,.1)" pad={9} radius={11} glow/>
+            <IcoBox ic={PieIcon} size={16} color="#8B5CF6" bg="rgba(139,92,246,.1)" pad={9} radius={11} glow/>
             <div><div style={{ fontSize:14,fontWeight:800,color:TXT }}>Estados de Solicitudes</div><div style={{ fontSize:11,color:MUT }}>Distribución del flujo</div></div>
           </div>
           <ResponsiveContainer width="100%" height={195}>
