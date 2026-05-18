@@ -541,7 +541,8 @@ function SolicitudForm({ ctx }) {
       </div>
     )}
   </div>
-);
+  );
+}
 
 /* ─── SOLICITUDES LIST ─── */
 
@@ -688,7 +689,8 @@ function Solicitudes({ ctx }) {
       </div>
     )}
   </div>
-);
+  );
+}
 
 /* ─── APROBACION ─── */
 
@@ -1212,7 +1214,8 @@ function Aprobacion({ ctx }) {
       </div>
     )}
   </div>
-);
+  );
+}
 
 /* ─── AUDITORIA ─── */
 
@@ -1298,7 +1301,8 @@ function Auditoria({ ctx }) {
       </table>
     </div>
   </div>
-);
+  );
+}
 
 /* ─── REPORTES ─── */
 
@@ -1396,7 +1400,8 @@ function Reportes({ ctx }) {
       </table>
     </div>
   </div>
-);
+  );
+}
 
 /* ─── USUARIOS ─── */
 
@@ -1448,7 +1453,8 @@ function Usuarios({ ctx }) {
       ))}
     </div>
   </div>
-);
+  );
+}
 
 /* ─── CONFIG ─── */
 
