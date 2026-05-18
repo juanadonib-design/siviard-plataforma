@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   LayoutDashboard, FilePlus2, ClipboardList, CheckCircle2, ShieldCheck,
-  BarChart3, Users, Settings, Bell, LogOut, Menu,
+  BarChart3, BarChart2, Users, Settings, Bell, LogOut, Menu,
   TrendingUp, TrendingDown, DollarSign, AlertTriangle,
   MapPin, Clock, Calendar, Building2, User, CreditCard, Briefcase,
   Upload, Download, Printer, Mail, Filter, Search, Eye, Check,
@@ -9,13 +9,12 @@ import {
   ChevronRight, Shield, FileText, Navigation, Route, Crosshair,
   ScanLine, Fingerprint, Database, Network, Cpu, Radio, Satellite,
   MonitorCheck, BadgeCheck, Layers, GitBranch, PieChart as PieIcon,
-  LineChart as LineIcon, Sun, Moon, Crown, Award, Target, Send,
+  LineChart as LineIcon, AreaChart, AreaChart as ChartArea, Sun, Moon, Crown, Award, Target, Send,
   ChevronLeft, ChevronDown, MoreHorizontal, ExternalLink, Trash2,
-  Edit3, AlertCircle, Info, Hash, MapPinned, DollarSign as Dollar,
+  Edit3, AlertCircle, Info, Hash, MapPinned,
   PanelLeftClose, PanelLeftOpen, Flame, Sparkles, Star,
-  // Premium additional icons
-  Radar, Hexagon, Binary, CircuitBoard, Workflow, BarChart2,
-  AreaChart, TrendingUp as Trend, ShieldAlert, UserCog, BellRing,
+  Radar, Hexagon, Binary, CircuitBoard, Workflow,
+  ShieldAlert, UserCog, BellRing,
   FlaskConical, Microscope, Telescope, Compass, Map, Waypoints,
   FileSearch, FileLock2, FileCheck2, FileBarChart2,
   UserCheck, UserX, UserPlus, UsersRound,
