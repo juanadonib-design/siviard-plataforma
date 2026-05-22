@@ -1421,6 +1421,10 @@ const MAP_CLASIFICACIONES = [
 const SUPLENTE_VACIO = () => ({
   id: Date.now() + Math.random(),
   nombres: "", apellidos: "", institucion: "", cedula: "", cargo: "", clasificacion: "",
+  activo: true,
+  vigenciaTemporal: false,
+  fechaInicio: "",
+  fechaFin: "",
 });
 
 const USUARIO_VACIO = () => ({
@@ -1471,7 +1475,13 @@ function Usuarios({ ctx }) {
       nombres: u.nombres, apellidos: u.apellidos,
       institucion: u.institucion, cedula: u.cedula,
       cargo: u.cargo, clasificacion: u.clasificacion,
-      suplentes: u.suplentes && u.suplentes.length > 0 ? u.suplentes.map(s => ({ ...s })) : [SUPLENTE_VACIO()],
+      suplentes: u.suplentes && u.suplentes.length > 0 ? u.suplentes.map(s => ({
+        ...s,
+        activo: s.activo !== undefined ? s.activo : true,
+        vigenciaTemporal: s.vigenciaTemporal || false,
+        fechaInicio: s.fechaInicio || "",
+        fechaFin: s.fechaFin || "",
+      })) : [SUPLENTE_VACIO()],
     });
     setErrors({});
     setModalOpen(true);
@@ -1710,19 +1720,36 @@ function Usuarios({ ctx }) {
                   <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
                     <Ico ic={GitMerge} size={12} color="#8B5CF6"/>
                     <span style={{ fontSize:10.5, fontWeight:700, color:"#8B5CF6", letterSpacing:.4 }}>{u.suplentes.length} SUPLENTE{u.suplentes.length>1?"S":""} VINCULADO{u.suplentes.length>1?"S":""}</span>
+                    {u.suplentes.filter(s=>!s.activo).length > 0 && (
+                      <span style={{ fontSize:9, fontWeight:700, color:"#64748B", background:"rgba(100,116,139,.1)", border:"1px solid rgba(100,116,139,.2)", borderRadius:6, padding:"1px 7px" }}>
+                        {u.suplentes.filter(s=>!s.activo).length} inactivo{u.suplentes.filter(s=>!s.activo).length>1?"s":""}
+                      </span>
+                    )}
                   </div>
-                  <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-                    {u.suplentes.map((s,si) => (
-                      <div key={si} style={{ display:"flex", alignItems:"center", gap:9 }}>
-                        <div style={{ width:24,height:24,borderRadius:8,background:"linear-gradient(135deg,#8B5CF6,#6366F1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:900,color:"#fff",flexShrink:0 }}>
-                          {getAvatarLetters(s.nombres, s.apellidos)}
+                  <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                    {u.suplentes.map((s,si) => {
+                      const isInactive = !s.activo;
+                      return (
+                        <div key={si} style={{ display:"flex", alignItems:"center", gap:9, padding:"6px 9px", borderRadius:9, background: isInactive ? (dark?"rgba(100,116,139,.08)":"rgba(100,116,139,.06)") : "transparent", border: isInactive ? `1px solid rgba(100,116,139,.15)` : "none", opacity: isInactive ? 0.65 : 1, transition:"all .22s" }}>
+                          <div style={{ width:24,height:24,borderRadius:8,background: isInactive ? "linear-gradient(135deg,#64748B,#94A3B8)" : "linear-gradient(135deg,#8B5CF6,#6366F1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:900,color:"#fff",flexShrink:0, transition:"background .22s" }}>
+                            {getAvatarLetters(s.nombres, s.apellidos)}
+                          </div>
+                          <div style={{ minWidth:0, flex:1 }}>
+                            <div style={{ fontSize:11.5, fontWeight:700, color: isInactive ? MUT : TXT, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", transition:"color .22s" }}>{s.nombres} {s.apellidos}</div>
+                            <div style={{ fontSize:10, color:MUT, display:"flex", alignItems:"center", gap:5, flexWrap:"wrap" }}>
+                              <span>{s.cargo}</span>
+                              {s.vigenciaTemporal && s.fechaInicio && s.fechaFin && (
+                                <span style={{ display:"inline-flex", alignItems:"center", gap:3, background:"rgba(139,92,246,.08)", borderRadius:5, padding:"1px 6px", fontSize:9, fontWeight:700, color:"#8B5CF6" }}>
+                                  <Ico ic={Calendar} size={8} color="#8B5CF6"/>{s.fechaInicio.slice(5)} → {s.fechaFin.slice(5)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {/* Estado badge */}
+                          <div style={{ width:7, height:7, borderRadius:"50%", background: isInactive ? "#94A3B8" : "#10B981", flexShrink:0, boxShadow: isInactive ? "none" : "0 0 0 2px rgba(16,185,129,.2)" }}/>
                         </div>
-                        <div style={{ minWidth:0 }}>
-                          <div style={{ fontSize:11.5, fontWeight:700, color:TXT, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.nombres} {s.apellidos}</div>
-                          <div style={{ fontSize:10, color:MUT }}>{s.cargo}</div>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1780,6 +1807,7 @@ function Usuarios({ ctx }) {
 
             {/* Suplentes */}
             <div style={{ borderTop:`1px solid ${BDR}`, paddingTop:24 }}>
+              {/* ── Cabecera de suplentes con acciones globales ── */}
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:9 }}>
                   <IcoBox ic={GitMerge} size={14} color="#8B5CF6" bg="rgba(139,92,246,.1)" pad={7} radius={9}/>
@@ -1788,26 +1816,73 @@ function Usuarios({ ctx }) {
                     <div style={{ fontSize:10.5, color:MUT, marginTop:1 }}>{uForm.suplentes.length} de 3 suplentes registrados</div>
                   </div>
                 </div>
-                {uForm.suplentes.length < 3 && (
-                  <button className="act-btn" onClick={addSuplente} style={{ padding:"9px 16px", background:"rgba(139,92,246,.12)", border:"1px solid rgba(139,92,246,.28)", borderRadius:10, color:"#8B5CF6", fontSize:12, fontWeight:700, justifyContent:"center" }}>
-                    <Ico ic={UserPlus} size={13} color="#8B5CF6"/> Añadir Suplente
-                  </button>
-                )}
+                <div style={{ display:"flex", gap:7, alignItems:"center" }}>
+                  {/* Botón: Eliminar todos los suplentes */}
+                  {uForm.suplentes.length > 0 && (
+                    <button
+                      className="act-btn"
+                      onClick={() => setUForm(p => ({ ...p, suplentes: [] }))}
+                      title="Eliminar todos los suplentes"
+                      style={{ padding:"9px 14px", background:"rgba(220,38,38,.1)", border:"1px solid rgba(220,38,38,.28)", borderRadius:10, color:"#DC2626", fontSize:11.5, fontWeight:700, justifyContent:"center" }}
+                    >
+                      <Ico ic={Trash2} size={13} color="#DC2626"/> Eliminar todos
+                    </button>
+                  )}
+                  {/* Botón: Añadir suplente */}
+                  {uForm.suplentes.length < 3 && (
+                    <button className="act-btn" onClick={addSuplente} style={{ padding:"9px 16px", background:"rgba(139,92,246,.12)", border:"1px solid rgba(139,92,246,.28)", borderRadius:10, color:"#8B5CF6", fontSize:12, fontWeight:700, justifyContent:"center" }}>
+                      <Ico ic={UserPlus} size={13} color="#8B5CF6"/> Añadir Suplente
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {uForm.suplentes.map((s, idx) => (
-                <div key={s.id || idx} style={{ marginBottom:16, padding:18, background:dark?"rgba(139,92,246,.05)":"rgba(139,92,246,.03)", borderRadius:16, border:"1.5px solid rgba(139,92,246,.18)" }}>
+              {uForm.suplentes.length === 0 && (
+                <div style={{ padding:"28px", textAlign:"center", borderRadius:14, border:`1.5px dashed ${BDR}`, background:dark?"rgba(255,255,255,.02)":"rgba(248,250,252,1)", marginBottom:8 }}>
+                  <Ico ic={UserX} size={24} color={MUT} style={{ marginBottom:8, display:"block", margin:"0 auto 10px" }}/>
+                  <div style={{ fontSize:12, color:MUT, fontWeight:600 }}>Sin suplentes registrados</div>
+                  <div style={{ fontSize:11, color:MUT, opacity:.6, marginTop:3 }}>Pulse "Añadir Suplente" para vincular uno</div>
+                </div>
+              )}
+
+              {uForm.suplentes.map((s, idx) => {
+                const isInactive = !s.activo;
+                return (
+                <div key={s.id || idx} style={{ marginBottom:16, padding:18, background: isInactive ? (dark?"rgba(100,116,139,.06)":"rgba(100,116,139,.04)") : (dark?"rgba(139,92,246,.05)":"rgba(139,92,246,.03)"), borderRadius:16, border:`1.5px solid ${isInactive?"rgba(100,116,139,.2)":"rgba(139,92,246,.18)"}`, opacity: isInactive ? 0.65 : 1, transition:"opacity .25s, border-color .25s, background .25s" }}>
+
+                  {/* ── Cabecera de la card del suplente ── */}
                   <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                      <div style={{ width:28,height:28,borderRadius:9,background:"linear-gradient(135deg,#8B5CF6,#6366F1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:"#fff" }}>S{idx+1}</div>
-                      <span style={{ fontSize:12, fontWeight:800, color:"#8B5CF6" }}>Suplente #{idx+1}</span>
+                      <div style={{ width:28,height:28,borderRadius:9,background: isInactive ? "linear-gradient(135deg,#64748B,#94A3B8)" : "linear-gradient(135deg,#8B5CF6,#6366F1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:"#fff", transition:"background .25s" }}>S{idx+1}</div>
+                      <span style={{ fontSize:12, fontWeight:800, color: isInactive ? MUT : "#8B5CF6", transition:"color .25s" }}>Suplente #{idx+1}</span>
+                      {/* Chip de estado */}
+                      <span style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"3px 9px", borderRadius:20, background: isInactive ? "rgba(100,116,139,.12)" : "rgba(16,185,129,.12)", border:`1px solid ${isInactive ? "rgba(100,116,139,.22)" : "rgba(16,185,129,.25)"}`, fontSize:9.5, fontWeight:800, color: isInactive ? "#64748B" : "#059669", letterSpacing:.3 }}>
+                        <div style={{ width:5, height:5, borderRadius:"50%", background: isInactive ? "#64748B" : "#10B981", flexShrink:0 }}/>
+                        {isInactive ? "Desactivado" : "Activo"}
+                      </span>
                     </div>
-                    {uForm.suplentes.length > 1 && (
-                      <button className="ic-btn topbar-ico" onClick={()=>removeSuplente(idx)} style={{ width:30,height:30,borderRadius:9,border:"1px solid rgba(239,68,68,.2)",background:"rgba(239,68,68,.07)" }}>
-                        <Ico ic={Trash2} size={13} color="#EF4444"/>
-                      </button>
-                    )}
+                    <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                      {/* Toggle Activar / Desactivar */}
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <span style={{ fontSize:10, color:MUT, fontWeight:600 }}>{s.activo ? "Activo" : "Inactivo"}</span>
+                        <div
+                          onClick={() => updateSuplente(idx, "activo", !s.activo)}
+                          title={s.activo ? "Desactivar suplente" : "Activar suplente"}
+                          style={{ width:40, height:22, borderRadius:11, background: s.activo ? "linear-gradient(90deg,#8B5CF6,#6366F1)" : (dark?"#334155":"#CBD5E1"), position:"relative", cursor:"pointer", flexShrink:0, transition:"background .25s", boxShadow: s.activo ? "0 3px 10px rgba(139,92,246,.35)" : "none" }}
+                        >
+                          <div style={{ width:16, height:16, borderRadius:"50%", background:"#fff", position:"absolute", top:3, left: s.activo ? 21 : 3, transition:"left .22s cubic-bezier(.34,1.56,.64,1)", boxShadow:"0 1px 4px rgba(0,0,0,.22)" }}/>
+                        </div>
+                      </div>
+                      {/* Eliminar suplente individual */}
+                      {uForm.suplentes.length > 1 && (
+                        <button className="ic-btn topbar-ico" onClick={()=>removeSuplente(idx)} style={{ width:30,height:30,borderRadius:9,border:"1px solid rgba(239,68,68,.2)",background:"rgba(239,68,68,.07)" }}>
+                          <Ico ic={Trash2} size={13} color="#EF4444"/>
+                        </button>
+                      )}
+                    </div>
                   </div>
+
+                  {/* ── Campos de datos del suplente ── */}
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
                     <SFLD idx={idx} label="Nombres (Suplente)" field="nombres" placeholder="Nombres del suplente" icon={User}/>
                     <SFLD idx={idx} label="Apellidos (Suplente)" field="apellidos" placeholder="Apellidos del suplente" icon={User}/>
@@ -1816,8 +1891,69 @@ function Usuarios({ ctx }) {
                     <SFLD idx={idx} label="Cargo / Posición (Suplente)" field="cargo" placeholder="Cargo del suplente" icon={Briefcase}/>
                     <SSEL idx={idx}/>
                   </div>
+
+                  {/* ── Vigencia temporal ── */}
+                  <div style={{ marginTop:14, paddingTop:13, borderTop:`1px solid ${BDR}` }}>
+                    <div
+                      onClick={() => updateSuplente(idx, "vigenciaTemporal", !s.vigenciaTemporal)}
+                      style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", userSelect:"none", marginBottom: s.vigenciaTemporal ? 12 : 0 }}
+                    >
+                      {/* Checkbox estilizado */}
+                      <div style={{ width:16, height:16, borderRadius:5, border:`1.5px solid ${s.vigenciaTemporal ? "#8B5CF6" : BDR}`, background: s.vigenciaTemporal ? "#8B5CF6" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, transition:"all .18s" }}>
+                        {s.vigenciaTemporal && <Check size={10} color="#fff" strokeWidth={3}/>}
+                      </div>
+                      <Ico ic={Calendar} size={12} color={s.vigenciaTemporal ? "#8B5CF6" : MUT}/>
+                      <span style={{ fontSize:11, fontWeight:700, color: s.vigenciaTemporal ? "#8B5CF6" : MUT, transition:"color .18s" }}>Definir vigencia temporal</span>
+                      {s.vigenciaTemporal && s.fechaInicio && s.fechaFin && (
+                        <span style={{ fontSize:9.5, color:"#8B5CF6", background:"rgba(139,92,246,.1)", border:"1px solid rgba(139,92,246,.2)", borderRadius:6, padding:"2px 8px", fontWeight:700 }}>
+                          {s.fechaInicio} → {s.fechaFin}
+                        </span>
+                      )}
+                    </div>
+
+                    {s.vigenciaTemporal && (
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, animation:"fadeUp .22s cubic-bezier(.22,1,.36,1)" }}>
+                        <div>
+                          <label style={{ display:"flex", alignItems:"center", gap:5, fontSize:10, fontWeight:700, color:MUT, marginBottom:6, letterSpacing:.6 }}>
+                            <Ico ic={Calendar} size={10} color={MUT}/> FECHA INICIO
+                          </label>
+                          <input
+                            type="date"
+                            value={s.fechaInicio}
+                            onChange={e => updateSuplente(idx, "fechaInicio", e.target.value)}
+                            style={{ width:"100%", padding:"9px 11px", borderRadius:9, border:`1.5px solid ${BDR}`, background:dark?"rgba(15,23,42,.6)":"#F8FAFC", color:TXT, fontSize:12 }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display:"flex", alignItems:"center", gap:5, fontSize:10, fontWeight:700, color:MUT, marginBottom:6, letterSpacing:.6 }}>
+                            <Ico ic={Calendar} size={10} color={MUT}/> FECHA FIN
+                          </label>
+                          <input
+                            type="date"
+                            value={s.fechaFin}
+                            min={s.fechaInicio || undefined}
+                            onChange={e => updateSuplente(idx, "fechaFin", e.target.value)}
+                            style={{ width:"100%", padding:"9px 11px", borderRadius:9, border:`1.5px solid ${BDR}`, background:dark?"rgba(15,23,42,.6)":"#F8FAFC", color:TXT, fontSize:12 }}
+                          />
+                        </div>
+                        {s.fechaInicio && s.fechaFin && s.fechaInicio > s.fechaFin && (
+                          <div style={{ gridColumn:"span 2", display:"flex", alignItems:"center", gap:6, padding:"7px 11px", background:"rgba(239,68,68,.08)", borderRadius:8, border:"1px solid rgba(239,68,68,.18)" }}>
+                            <Ico ic={AlertCircle} size={11} color="#EF4444"/>
+                            <span style={{ fontSize:10.5, color:"#EF4444", fontWeight:600 }}>La fecha de fin debe ser posterior a la fecha de inicio</span>
+                          </div>
+                        )}
+                        {!s.activo && s.vigenciaTemporal && (
+                          <div style={{ gridColumn:"span 2", display:"flex", alignItems:"center", gap:6, padding:"7px 11px", background:"rgba(245,158,11,.07)", borderRadius:8, border:"1px solid rgba(245,158,11,.18)" }}>
+                            <Ico ic={AlertCircle} size={11} color="#F59E0B"/>
+                            <span style={{ fontSize:10.5, color:"#B45309", fontWeight:600 }}>Suplente desactivado. La vigencia temporal no aplicará hasta que sea reactivado.</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -1914,11 +2050,11 @@ export default function SIVIARD() {
   // ── USUARIOS STATE ──
   const [usuarios, setUsuarios] = useState([
     { id:1, nombres:"Carlos", apellidos:"Medina Flores", institucion:"Ministerio de Tecnología", cedula:"001-1234567-8", cargo:"Administrador de Sistemas", clasificacion:"Profesionales", color:"#2563EB", solic:12, email:"c.medina@gov.do", suplentes:[
-      { id:11, nombres:"Ana", apellidos:"Reyes López", institucion:"Ministerio de Tecnología", cedula:"001-7654321-2", cargo:"Técnica de Soporte", clasificacion:"Tecnicos" },
+      { id:11, nombres:"Ana", apellidos:"Reyes López", institucion:"Ministerio de Tecnología", cedula:"001-7654321-2", cargo:"Técnica de Soporte", clasificacion:"Tecnicos", activo:true, vigenciaTemporal:false, fechaInicio:"", fechaFin:"" },
     ]},
     { id:2, nombres:"María", apellidos:"González Vargas", institucion:"Ministerio de Salud", cedula:"002-2345678-9", cargo:"Directora Regional", clasificacion:"Directores de areas", color:"#8B5CF6", solic:8, email:"m.gonzalez@gov.do", suplentes:[
-      { id:21, nombres:"Jorge", apellidos:"Castillo Núñez", institucion:"Ministerio de Salud", cedula:"002-8765432-3", cargo:"Sub Director", clasificacion:"Sub directores generales, nacionales y equivalentes" },
-      { id:22, nombres:"Luisa", apellidos:"Fernández Marte", institucion:"Ministerio de Salud", cedula:"002-5432167-4", cargo:"Coordinadora Regional", clasificacion:"Encargados de departamentos, divisiones y coordinadores" },
+      { id:21, nombres:"Jorge", apellidos:"Castillo Núñez", institucion:"Ministerio de Salud", cedula:"002-8765432-3", cargo:"Sub Director", clasificacion:"Sub directores generales, nacionales y equivalentes", activo:true, vigenciaTemporal:false, fechaInicio:"", fechaFin:"" },
+      { id:22, nombres:"Luisa", apellidos:"Fernández Marte", institucion:"Ministerio de Salud", cedula:"002-5432167-4", cargo:"Coordinadora Regional", clasificacion:"Encargados de departamentos, divisiones y coordinadores", activo:false, vigenciaTemporal:true, fechaInicio:"2025-06-01", fechaFin:"2025-08-31" },
     ]},
   ]);
 
