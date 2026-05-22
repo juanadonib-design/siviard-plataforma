@@ -14,7 +14,7 @@ import {
   Edit3, AlertCircle, Info, Hash, MapPinned,
   PanelLeftClose, PanelLeftOpen, Flame, Sparkles, Star,
   Radar, Hexagon, Binary, CircuitBoard, Workflow,
-  ShieldAlert, UserCog, BellRing,
+  ShieldAlert, UserCog, BellRing, GitMerge,
   FlaskConical, Microscope, Telescope, Compass, Map, Waypoints,
   FileSearch, FileLock2, FileCheck2, FileBarChart2,
   UserCheck, UserX, UserPlus, UsersRound,
@@ -1405,56 +1405,439 @@ function Reportes({ ctx }) {
 
 /* ─── USUARIOS ─── */
 
-/* ─── USUARIOS ─── */
+const MAP_CLASIFICACIONES = [
+  "Ministros",
+  "Viceministros",
+  "Directores generales, nacionales, generales, ejecutivos y equivalentes",
+  "Sub directores generales, nacionales y equivalentes",
+  "Directores de areas",
+  "Encargados de departamentos, divisiones y coordinadores",
+  "Encargados de secciones y coordinadores",
+  "Profesionales",
+  "Tecnicos",
+  "Otros puestos",
+];
+
+const SUPLENTE_VACIO = () => ({
+  id: Date.now() + Math.random(),
+  nombres: "", apellidos: "", institucion: "", cedula: "", cargo: "", clasificacion: "",
+});
+
+const USUARIO_VACIO = () => ({
+  id: null,
+  nombres: "", apellidos: "", institucion: "", cedula: "", cargo: "", clasificacion: "",
+  suplentes: [SUPLENTE_VACIO()],
+});
+
+function validarCedula(v) {
+  return /^\d{3}-\d{7}-\d$/.test(v);
+}
+
+function fmtCedula(v) {
+  const digits = v.replace(/\D/g, "").slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 10) return digits.slice(0,3) + "-" + digits.slice(3);
+  return digits.slice(0,3) + "-" + digits.slice(3,10) + "-" + digits.slice(10);
+}
+
+function getAvatarLetters(nombres, apellidos) {
+  const n = (nombres || "").trim()[0] || "";
+  const a = (apellidos || "").trim()[0] || "";
+  return (n + a).toUpperCase() || "??";
+}
+
+const AVATAR_COLORS = ["#2563EB","#8B5CF6","#10B981","#F59E0B","#EF4444","#06B6D4","#EC4899","#6366F1"];
+
 function Usuarios({ ctx }) {
-  const { BG, CARD, CARD2, BDR, TXT, MUT, dark, menu, setMenu, q, setQ, fEst, setFEst, selSol, setSelSol, step, setStep, dnAlert, setDnAlert, submitting, setSubmitting, submitted, setSubmitted, form, setForm, flujoSteps, setFlujoSteps, flujoModalOpen, setFlujoModalOpen, editingStep, setEditingStep, stepForm, setStepForm, tooltipStep, tooltipPos, notify, resolveIc, FILTERED, ICON_CATALOGUE, COLOR_PALETTE, openNewStep, openEditStep, saveStep, deleteStep, moveStep } = ctx;
+  const { BG, CARD, CARD2, BDR, TXT, MUT, dark, notify, usuarios, setUsuarios } = ctx;
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [uForm, setUForm] = useState(USUARIO_VACIO());
+  const [errors, setErrors] = useState({});
+  const [searchQ, setSearchQ] = useState("");
+
+  const openNuevo = () => {
+    setEditingId(null);
+    setUForm(USUARIO_VACIO());
+    setErrors({});
+    setModalOpen(true);
+  };
+
+  const openEditar = (u) => {
+    setEditingId(u.id);
+    setUForm({
+      id: u.id,
+      nombres: u.nombres, apellidos: u.apellidos,
+      institucion: u.institucion, cedula: u.cedula,
+      cargo: u.cargo, clasificacion: u.clasificacion,
+      suplentes: u.suplentes && u.suplentes.length > 0 ? u.suplentes.map(s => ({ ...s })) : [SUPLENTE_VACIO()],
+    });
+    setErrors({});
+    setModalOpen(true);
+  };
+
+  const addSuplente = () => {
+    if (uForm.suplentes.length >= 3) return;
+    setUForm(p => ({ ...p, suplentes: [...p.suplentes, SUPLENTE_VACIO()] }));
+  };
+
+  const removeSuplente = (idx) => {
+    setUForm(p => ({ ...p, suplentes: p.suplentes.filter((_,i) => i !== idx) }));
+  };
+
+  const updateSuplente = (idx, field, value) => {
+    setUForm(p => {
+      const sups = p.suplentes.map((s, i) => i === idx ? { ...s, [field]: value } : s);
+      return { ...p, suplentes: sups };
+    });
+  };
+
+  const validate = () => {
+    const e = {};
+    if (!uForm.nombres.trim())        e.nombres = "Requerido";
+    if (!uForm.apellidos.trim())      e.apellidos = "Requerido";
+    if (!uForm.institucion.trim())    e.institucion = "Requerido";
+    if (!uForm.cargo.trim())          e.cargo = "Requerido";
+    if (!uForm.clasificacion)         e.clasificacion = "Requerido";
+    if (!validarCedula(uForm.cedula)) e.cedula = "Formato: 000-0000000-0";
+    uForm.suplentes.forEach((s, i) => {
+      if (!s.nombres.trim())        e[`s${i}_nombres`]        = "Requerido";
+      if (!s.apellidos.trim())      e[`s${i}_apellidos`]      = "Requerido";
+      if (!s.institucion.trim())    e[`s${i}_institucion`]    = "Requerido";
+      if (!s.cargo.trim())          e[`s${i}_cargo`]          = "Requerido";
+      if (!s.clasificacion)         e[`s${i}_clasificacion`]  = "Requerido";
+      if (!validarCedula(s.cedula)) e[`s${i}_cedula`]         = "Formato: 000-0000000-0";
+    });
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const guardar = () => {
+    if (!validate()) return;
+    const colorIdx = usuarios.length % AVATAR_COLORS.length;
+    if (editingId !== null) {
+      setUsuarios(prev => prev.map(u => u.id === editingId ? { ...u, ...uForm, color: u.color } : u));
+      notify("Usuario actualizado exitosamente");
+    } else {
+      const nuevo = {
+        ...uForm,
+        id: Date.now(),
+        color: AVATAR_COLORS[colorIdx],
+        solic: 0,
+        email: `${(uForm.nombres.split(" ")[0]||"x").toLowerCase()}.${(uForm.apellidos.split(" ")[0]||"x").toLowerCase()}@gov.do`,
+      };
+      setUsuarios(prev => [...prev, nuevo]);
+      notify("Usuario registrado exitosamente");
+    }
+    setModalOpen(false);
+  };
+
+  const eliminar = (id) => {
+    setUsuarios(prev => prev.filter(u => u.id !== id));
+    notify("Usuario eliminado");
+  };
+
+  const FILTRADOS = usuarios.filter(u => {
+    const q = searchQ.toLowerCase();
+    return !q || [u.nombres, u.apellidos, u.institucion, u.cargo].some(v => (v||"").toLowerCase().includes(q));
+  });
+
+  const FLD = ({ label, field, placeholder, icon: Ic, span2=false }) => {
+    const val = uForm[field];
+    const err = errors[field];
+    return (
+      <div style={{ gridColumn: span2 ? "span 2" : "span 1" }}>
+        <label style={{ display:"flex", alignItems:"center", gap:5, fontSize:10.5, fontWeight:700, color:err?"#EF4444":MUT, marginBottom:7, letterSpacing:.8 }}>
+          <Ico ic={Ic} size={11} color={err?"#EF4444":MUT}/> {label.toUpperCase()}
+        </label>
+        <input
+          value={val}
+          placeholder={placeholder}
+          onChange={e => {
+            const v = field === "cedula" ? fmtCedula(e.target.value) : e.target.value;
+            setUForm(p => ({ ...p, [field]: v }));
+            if (errors[field]) setErrors(p => { const n={...p}; delete n[field]; return n; });
+          }}
+          style={{ width:"100%", padding:"11px 13px", borderRadius:10, border:`1.5px solid ${err?"#EF4444":BDR}`, background:dark?"rgba(15,23,42,.5)":"#fff", color:TXT, fontSize:13 }}
+        />
+        {err && <div style={{ fontSize:10, color:"#EF4444", marginTop:4 }}>{err}</div>}
+      </div>
+    );
+  };
+
+  const SEL = ({ label, field, icon: Ic }) => {
+    const val = uForm[field];
+    const err = errors[field];
+    return (
+      <div style={{ gridColumn:"span 2" }}>
+        <label style={{ display:"flex", alignItems:"center", gap:5, fontSize:10.5, fontWeight:700, color:err?"#EF4444":MUT, marginBottom:7, letterSpacing:.8 }}>
+          <Ico ic={Ic} size={11} color={err?"#EF4444":MUT}/> {label.toUpperCase()}
+        </label>
+        <select
+          value={val}
+          onChange={e => { setUForm(p => ({ ...p, [field]: e.target.value })); if(errors[field]) setErrors(p=>{const n={...p};delete n[field];return n;}); }}
+          style={{ width:"100%", padding:"11px 13px", borderRadius:10, border:`1.5px solid ${err?"#EF4444":BDR}`, background:dark?"rgba(15,23,42,.5)":"#fff", color:val?TXT:MUT, fontSize:13 }}
+        >
+          <option value="">-- Seleccione clasificación MAP --</option>
+          {MAP_CLASIFICACIONES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        {err && <div style={{ fontSize:10, color:"#EF4444", marginTop:4 }}>{err}</div>}
+      </div>
+    );
+  };
+
+  const SFLD = ({ idx, label, field, placeholder, icon: Ic }) => {
+    const val = (uForm.suplentes[idx] || {})[field] || "";
+    const eKey = `s${idx}_${field}`;
+    const err = errors[eKey];
+    return (
+      <div>
+        <label style={{ display:"flex", alignItems:"center", gap:4, fontSize:10, fontWeight:700, color:err?"#EF4444":MUT, marginBottom:6, letterSpacing:.6 }}>
+          <Ico ic={Ic} size={10} color={err?"#EF4444":MUT}/> {label.toUpperCase()}
+        </label>
+        <input
+          value={val}
+          placeholder={placeholder}
+          onChange={e => {
+            const v = field === "cedula" ? fmtCedula(e.target.value) : e.target.value;
+            updateSuplente(idx, field, v);
+            if (errors[eKey]) setErrors(p => { const n={...p}; delete n[eKey]; return n; });
+          }}
+          style={{ width:"100%", padding:"9px 11px", borderRadius:9, border:`1.5px solid ${err?"#EF4444":BDR}`, background:dark?"rgba(15,23,42,.6)":"#F8FAFC", color:TXT, fontSize:12 }}
+        />
+        {err && <div style={{ fontSize:9.5, color:"#EF4444", marginTop:3 }}>{err}</div>}
+      </div>
+    );
+  };
+
+  const SSEL = ({ idx }) => {
+    const val = (uForm.suplentes[idx] || {}).clasificacion || "";
+    const eKey = `s${idx}_clasificacion`;
+    const err = errors[eKey];
+    return (
+      <div style={{ gridColumn:"span 2" }}>
+        <label style={{ display:"flex", alignItems:"center", gap:4, fontSize:10, fontWeight:700, color:err?"#EF4444":MUT, marginBottom:6, letterSpacing:.6 }}>
+          <Ico ic={Award} size={10} color={err?"#EF4444":MUT}/> CLASIFICACIÓN MAP (SUPLENTE)
+        </label>
+        <select
+          value={val}
+          onChange={e => { updateSuplente(idx, "clasificacion", e.target.value); if(errors[eKey]) setErrors(p=>{const n={...p};delete n[eKey];return n;}); }}
+          style={{ width:"100%", padding:"9px 11px", borderRadius:9, border:`1.5px solid ${err?"#EF4444":BDR}`, background:dark?"rgba(15,23,42,.6)":"#F8FAFC", color:val?TXT:MUT, fontSize:12 }}
+        >
+          <option value="">-- Seleccione --</option>
+          {MAP_CLASIFICACIONES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        {err && <div style={{ fontSize:9.5, color:"#EF4444", marginTop:3 }}>{err}</div>}
+      </div>
+    );
+  };
+
   return (
   <div style={{ animation:"fadeUp .42s cubic-bezier(.22,1,.36,1)", fontFamily:"'DM Sans',system-ui,sans-serif" }}>
+    {/* HEADER */}
     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", marginBottom:26 }}>
       <div>
         <div style={{ display:"flex", alignItems:"center", gap:11, marginBottom:5 }}>
           <div style={{ width:4, height:24, borderRadius:2, background:"linear-gradient(180deg,#06B6D4,#8B5CF6)" }} />
           <h2 style={{ fontSize:23, fontWeight:900, color:TXT, letterSpacing:-.7 }}>Gestión de Usuarios</h2>
         </div>
-        <p style={{ color:MUT, fontSize:13, paddingLeft:15 }}>Administración de accesos institucionales</p>
+        <p style={{ color:MUT, fontSize:13, paddingLeft:15 }}>Registro de servidores públicos con suplentes institucionales</p>
       </div>
-      <button className="act-btn" style={{ padding:"12px 22px",background:"linear-gradient(135deg,#06B6D4,#0891B2)",borderRadius:13,color:"#fff",fontSize:13,fontWeight:800,border:"none",boxShadow:"0 8px 18px rgba(6,182,212,.3)" }}>
-        <Ico ic={UserPlus} size={16} color="#fff"/> Nuevo Usuario
-      </button>
+      <div style={{ display:"flex", gap:9, alignItems:"center" }}>
+        <div style={{ position:"relative" }}>
+          <div style={{ position:"absolute", left:11, top:"50%", transform:"translateY(-50%)" }}><Ico ic={Search} size={13} color={MUT}/></div>
+          <input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Buscar usuario..." style={{ padding:"9px 13px 9px 32px", borderRadius:11, border:`1px solid ${BDR}`, background:CARD, color:TXT, fontSize:12, width:200 }}/>
+        </div>
+        <button className="act-btn" onClick={openNuevo} style={{ padding:"12px 22px",background:"linear-gradient(135deg,#06B6D4,#0891B2)",borderRadius:13,color:"#fff",fontSize:13,fontWeight:800,border:"none",boxShadow:"0 8px 18px rgba(6,182,212,.3)" }}>
+          <Ico ic={UserPlus} size={16} color="#fff"/> Nuevo Usuario
+        </button>
+      </div>
     </div>
-    <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:15 }}>
-      {EMPLEADOS.map((u,i) => (
-        <div key={i} className="hover-lift card" style={{ background:CARD, borderRadius:18, border:`1px solid ${BDR}`, padding:24 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:15, marginBottom:18 }}>
-            <div style={{ width:54,height:54,borderRadius:17,background:`linear-gradient(135deg,${u.color},${u.color}88)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:900,color:"#fff",flexShrink:0,boxShadow:`0 8px 20px ${u.color}35` }}>{u.avatar}</div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontSize:14,fontWeight:800,color:TXT }}>{u.nombre}</div>
-              <div style={{ fontSize:12,color:MUT }}>{u.rol} · {u.depto}</div>
-            </div>
-            <Chip label="Activo"/>
-          </div>
-          <div style={{ borderTop:`1px solid ${BDR}`, paddingTop:15, display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
-            {[[Mail,u.email.split("@")[0]+"@...",MUT],[Waypoints,`${u.solic} solicitudes`,"#2563EB"],[ShieldCheck,"Verificado","#10B981"]].map(([Ic,v,c],j)=>(
-              <div key={j} style={{ textAlign:"center",padding:"9px 6px",background:CARD2,borderRadius:11 }}>
-                <Ico ic={Ic} size={15} color={c} style={{ marginBottom:4 }}/>
-                <div style={{ fontSize:10,fontWeight:600,color:c,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{v}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop:13,display:"flex",gap:9 }}>
-            <button className="act-btn" style={{ flex:1,padding:"9px",border:`1px solid ${BDR}`,borderRadius:10,background:"transparent",color:MUT,fontSize:12,fontWeight:600,justifyContent:"center" }}>
-              <Ico ic={UserCog} size={14} color={MUT}/> Editar
-            </button>
-            <button className="act-btn" style={{ padding:"9px 15px",border:`1px solid rgba(239,68,68,.2)`,borderRadius:10,background:"rgba(239,68,68,.06)",color:"#EF4444",justifyContent:"center" }}>
-              <Ico ic={UserX} size={15} color="#EF4444"/>
-            </button>
+
+    {/* STATS */}
+    <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:20 }}>
+      {[
+        { lbl:"Total Registrados", val:usuarios.length, ic:UsersRound, c:"#06B6D4", bg:"rgba(6,182,212,.1)" },
+        { lbl:"Con Suplentes", val:usuarios.filter(u=>u.suplentes&&u.suplentes.length>0).length, ic:GitMerge, c:"#8B5CF6", bg:"rgba(139,92,246,.1)" },
+        { lbl:"Activos", val:usuarios.length, ic:ShieldCheck, c:"#10B981", bg:"rgba(16,185,129,.1)" },
+      ].map((s,i) => (
+        <div key={i} style={{ background:CARD, borderRadius:14, border:`1px solid ${BDR}`, padding:"18px 20px", display:"flex", alignItems:"center", gap:14 }}>
+          <IcoBox ic={s.ic} size={20} color={s.c} bg={s.bg} pad={11} radius={12} glow/>
+          <div>
+            <div style={{ fontSize:26, fontWeight:900, color:s.c, letterSpacing:-1.2, lineHeight:1 }}>{s.val}</div>
+            <div style={{ fontSize:11, color:MUT, marginTop:3 }}>{s.lbl}</div>
           </div>
         </div>
       ))}
     </div>
+
+    {/* CARDS */}
+    {FILTRADOS.length === 0 ? (
+      <div style={{ background:CARD, borderRadius:18, border:`1px solid ${BDR}`, padding:56, textAlign:"center" }}>
+        <IcoBox ic={UsersRound} size={28} color={MUT} bg={BG} pad={16} radius={18} style={{ margin:"0 auto 16px" }}/>
+        <div style={{ fontSize:14, fontWeight:700, color:TXT }}>No se encontraron usuarios</div>
+        <div style={{ fontSize:12, color:MUT, marginTop:5 }}>Registre el primer servidor público con el botón "Nuevo Usuario"</div>
+      </div>
+    ) : (
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:15 }}>
+        {FILTRADOS.map((u) => {
+          const av = getAvatarLetters(u.nombres, u.apellidos);
+          const nombreCompleto = `${u.nombres} ${u.apellidos}`;
+          return (
+            <div key={u.id} className="hover-lift card" style={{ background:CARD, borderRadius:18, border:`1px solid ${BDR}`, padding:24 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:15, marginBottom:16 }}>
+                <div style={{ width:54,height:54,borderRadius:17,background:`linear-gradient(135deg,${u.color},${u.color}88)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:900,color:"#fff",flexShrink:0,boxShadow:`0 8px 20px ${u.color}35` }}>{av}</div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:14,fontWeight:800,color:TXT,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{nombreCompleto}</div>
+                  <div style={{ fontSize:11,color:MUT,marginTop:2 }}>{u.cargo}</div>
+                  <div style={{ fontSize:10,color:MUT,opacity:.7 }}>{u.institucion}</div>
+                </div>
+                <Chip label="Activo"/>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:9, marginBottom:14 }}>
+                <div style={{ padding:"9px 12px", background:CARD2, borderRadius:10, border:`1px solid ${BDR}` }}>
+                  <div style={{ fontSize:9.5, color:MUT, marginBottom:3, display:"flex", alignItems:"center", gap:4 }}><Ico ic={CreditCard} size={9} color={MUT}/>CÉDULA</div>
+                  <div style={{ fontSize:11.5, fontWeight:700, color:TXT, fontFamily:"'JetBrains Mono',monospace" }}>{u.cedula}</div>
+                </div>
+                <div style={{ padding:"9px 12px", background:CARD2, borderRadius:10, border:`1px solid ${BDR}` }}>
+                  <div style={{ fontSize:9.5, color:MUT, marginBottom:3, display:"flex", alignItems:"center", gap:4 }}><Ico ic={Award} size={9} color={MUT}/>CLASIFICACIÓN MAP</div>
+                  <div style={{ fontSize:10.5, fontWeight:600, color:"#8B5CF6", lineHeight:1.3 }}>{u.clasificacion||"—"}</div>
+                </div>
+              </div>
+              {u.suplentes && u.suplentes.length > 0 && (
+                <div style={{ marginBottom:14, padding:"10px 13px", background:dark?"rgba(139,92,246,.07)":"rgba(139,92,246,.04)", borderRadius:11, border:"1px solid rgba(139,92,246,.18)" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
+                    <Ico ic={GitMerge} size={12} color="#8B5CF6"/>
+                    <span style={{ fontSize:10.5, fontWeight:700, color:"#8B5CF6", letterSpacing:.4 }}>{u.suplentes.length} SUPLENTE{u.suplentes.length>1?"S":""} VINCULADO{u.suplentes.length>1?"S":""}</span>
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+                    {u.suplentes.map((s,si) => (
+                      <div key={si} style={{ display:"flex", alignItems:"center", gap:9 }}>
+                        <div style={{ width:24,height:24,borderRadius:8,background:"linear-gradient(135deg,#8B5CF6,#6366F1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:900,color:"#fff",flexShrink:0 }}>
+                          {getAvatarLetters(s.nombres, s.apellidos)}
+                        </div>
+                        <div style={{ minWidth:0 }}>
+                          <div style={{ fontSize:11.5, fontWeight:700, color:TXT, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.nombres} {s.apellidos}</div>
+                          <div style={{ fontSize:10, color:MUT }}>{s.cargo}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div style={{ display:"flex", gap:9 }}>
+                <button className="act-btn" onClick={()=>openEditar(u)} style={{ flex:1,padding:"9px",border:`1px solid ${BDR}`,borderRadius:10,background:"transparent",color:"#06B6D4",fontSize:12,fontWeight:700,justifyContent:"center" }}>
+                  <Ico ic={Edit3} size={14} color="#06B6D4"/> Editar
+                </button>
+                <button className="act-btn" onClick={()=>eliminar(u.id)} style={{ padding:"9px 15px",border:"1px solid rgba(239,68,68,.2)",borderRadius:10,background:"rgba(239,68,68,.06)",color:"#EF4444",justifyContent:"center" }}>
+                  <Ico ic={UserX} size={15} color="#EF4444"/>
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+
+    {/* ═══ MODAL ═══ */}
+    {modalOpen && (
+      <div
+        style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.7)", display:"flex", alignItems:"flex-start", justifyContent:"center", zIndex:1000, padding:"20px", overflowY:"auto", animation:"fadeIn .2s ease" }}
+        onClick={e => { if(e.target===e.currentTarget) setModalOpen(false); }}
+      >
+        <div style={{ background:CARD, borderRadius:24, border:`1px solid ${BDR}`, width:"100%", maxWidth:780, boxShadow:"0 48px 120px rgba(0,0,0,.45)", animation:"fadeUp .3s cubic-bezier(.22,1,.36,1)", marginBottom:20, marginTop:10 }}>
+          {/* Header */}
+          <div style={{ padding:"22px 28px", borderBottom:`1px solid ${BDR}`, display:"flex", justifyContent:"space-between", alignItems:"center", background:dark?"rgba(6,182,212,.05)":"rgba(6,182,212,.03)", borderRadius:"24px 24px 0 0" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:13 }}>
+              <IcoBox ic={editingId!==null?Edit3:UserPlus} size={18} color="#06B6D4" bg="linear-gradient(135deg,rgba(6,182,212,.25),rgba(8,145,178,.15))" pad={10} radius={13} glow/>
+              <div>
+                <div style={{ fontSize:16, fontWeight:900, color:TXT }}>{editingId!==null?"Editar Registro de Usuario":"Nuevo Servidor Público"}</div>
+                <div style={{ fontSize:11, color:MUT, marginTop:2 }}>Complete todos los campos obligatorios del registro institucional</div>
+              </div>
+            </div>
+            <button className="ic-btn topbar-ico" onClick={()=>setModalOpen(false)} style={{ width:38,height:38,borderRadius:12,border:`1px solid ${BDR}` }}>
+              <Ico ic={XCircle} size={18} color={MUT}/>
+            </button>
+          </div>
+
+          <div style={{ padding:"28px 28px" }}>
+            {/* Datos principales */}
+            <div style={{ marginBottom:28 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:9, marginBottom:18 }}>
+                <IcoBox ic={User} size={14} color="#06B6D4" bg="rgba(6,182,212,.1)" pad={7} radius={9}/>
+                <div style={{ fontSize:13, fontWeight:800, color:TXT }}>Datos del Servidor Público Principal</div>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+                <FLD label="Nombres" field="nombres" placeholder="Ej: Juan Carlos" icon={User}/>
+                <FLD label="Apellidos" field="apellidos" placeholder="Ej: Ramírez Mejía" icon={User}/>
+                <FLD label="Institución" field="institucion" placeholder="Ej: Ministerio de Obras Públicas" icon={Building2}/>
+                <FLD label="Cédula" field="cedula" placeholder="000-0000000-0" icon={CreditCard}/>
+                <FLD label="Cargo / Posición" field="cargo" placeholder="Ej: Director Regional" icon={Briefcase}/>
+                <SEL label="Clasificación según el MAP" field="clasificacion" icon={Award}/>
+              </div>
+            </div>
+
+            {/* Suplentes */}
+            <div style={{ borderTop:`1px solid ${BDR}`, paddingTop:24 }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:9 }}>
+                  <IcoBox ic={GitMerge} size={14} color="#8B5CF6" bg="rgba(139,92,246,.1)" pad={7} radius={9}/>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:800, color:TXT }}>Gestión de Suplentes Institucionales</div>
+                    <div style={{ fontSize:10.5, color:MUT, marginTop:1 }}>{uForm.suplentes.length} de 3 suplentes registrados</div>
+                  </div>
+                </div>
+                {uForm.suplentes.length < 3 && (
+                  <button className="act-btn" onClick={addSuplente} style={{ padding:"9px 16px", background:"rgba(139,92,246,.12)", border:"1px solid rgba(139,92,246,.28)", borderRadius:10, color:"#8B5CF6", fontSize:12, fontWeight:700, justifyContent:"center" }}>
+                    <Ico ic={UserPlus} size={13} color="#8B5CF6"/> Añadir Suplente
+                  </button>
+                )}
+              </div>
+
+              {uForm.suplentes.map((s, idx) => (
+                <div key={s.id || idx} style={{ marginBottom:16, padding:18, background:dark?"rgba(139,92,246,.05)":"rgba(139,92,246,.03)", borderRadius:16, border:"1.5px solid rgba(139,92,246,.18)" }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      <div style={{ width:28,height:28,borderRadius:9,background:"linear-gradient(135deg,#8B5CF6,#6366F1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:"#fff" }}>S{idx+1}</div>
+                      <span style={{ fontSize:12, fontWeight:800, color:"#8B5CF6" }}>Suplente #{idx+1}</span>
+                    </div>
+                    {uForm.suplentes.length > 1 && (
+                      <button className="ic-btn topbar-ico" onClick={()=>removeSuplente(idx)} style={{ width:30,height:30,borderRadius:9,border:"1px solid rgba(239,68,68,.2)",background:"rgba(239,68,68,.07)" }}>
+                        <Ico ic={Trash2} size={13} color="#EF4444"/>
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                    <SFLD idx={idx} label="Nombres (Suplente)" field="nombres" placeholder="Nombres del suplente" icon={User}/>
+                    <SFLD idx={idx} label="Apellidos (Suplente)" field="apellidos" placeholder="Apellidos del suplente" icon={User}/>
+                    <SFLD idx={idx} label="Institución (Suplente)" field="institucion" placeholder="Institución" icon={Building2}/>
+                    <SFLD idx={idx} label="Cédula (Suplente)" field="cedula" placeholder="000-0000000-0" icon={CreditCard}/>
+                    <SFLD idx={idx} label="Cargo / Posición (Suplente)" field="cargo" placeholder="Cargo del suplente" icon={Briefcase}/>
+                    <SSEL idx={idx}/>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div style={{ padding:"16px 28px", borderTop:`1px solid ${BDR}`, display:"flex", justifyContent:"space-between", alignItems:"center", background:dark?"rgba(255,255,255,.01)":"#FAFAFA", borderRadius:"0 0 24px 24px" }}>
+            <button className="act-btn" onClick={()=>setModalOpen(false)} style={{ padding:"11px 22px", border:`1px solid ${BDR}`, borderRadius:11, color:MUT, fontSize:13, fontWeight:700, background:"transparent" }}>
+              Cancelar
+            </button>
+            <button className="act-btn" onClick={guardar} style={{ padding:"11px 28px", borderRadius:11, border:"none", background:"linear-gradient(135deg,#06B6D4,#0891B2)", color:"#fff", fontSize:13, fontWeight:800, boxShadow:"0 8px 20px rgba(6,182,212,.32)" }}>
+              <Ico ic={CircleCheck} size={15} color="#fff"/>
+              {editingId!==null ? "Guardar Cambios" : "Registrar Usuario"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   </div>
   );
 }
+
 
 /* ─── CONFIG ─── */
 
@@ -1527,6 +1910,17 @@ export default function SIVIARD() {
   const [fEst, setFEst] = useState("Todos");
   const [selSol, setSelSol] = useState(null);
   const [hovNav, setHovNav] = useState(null);
+
+  // ── USUARIOS STATE ──
+  const [usuarios, setUsuarios] = useState([
+    { id:1, nombres:"Carlos", apellidos:"Medina Flores", institucion:"Ministerio de Tecnología", cedula:"001-1234567-8", cargo:"Administrador de Sistemas", clasificacion:"Profesionales", color:"#2563EB", solic:12, email:"c.medina@gov.do", suplentes:[
+      { id:11, nombres:"Ana", apellidos:"Reyes López", institucion:"Ministerio de Tecnología", cedula:"001-7654321-2", cargo:"Técnica de Soporte", clasificacion:"Tecnicos" },
+    ]},
+    { id:2, nombres:"María", apellidos:"González Vargas", institucion:"Ministerio de Salud", cedula:"002-2345678-9", cargo:"Directora Regional", clasificacion:"Directores de areas", color:"#8B5CF6", solic:8, email:"m.gonzalez@gov.do", suplentes:[
+      { id:21, nombres:"Jorge", apellidos:"Castillo Núñez", institucion:"Ministerio de Salud", cedula:"002-8765432-3", cargo:"Sub Director", clasificacion:"Sub directores generales, nacionales y equivalentes" },
+      { id:22, nombres:"Luisa", apellidos:"Fernández Marte", institucion:"Ministerio de Salud", cedula:"002-5432167-4", cargo:"Coordinadora Regional", clasificacion:"Encargados de departamentos, divisiones y coordinadores" },
+    ]},
+  ]);
 
   // ── TOOLTIP STATE ──
   const [tooltipStep, setTooltipStep] = useState(null);
@@ -1750,7 +2144,7 @@ export default function SIVIARD() {
   );
 
   /* ── PAGES ── */
-  const ctx = { BG, CARD, CARD2, BDR, TXT, MUT, dark, menu, setMenu, q, setQ, fEst, setFEst, selSol, setSelSol, step, setStep, dnAlert, setDnAlert, submitting, setSubmitting, submitted, setSubmitted, form, setForm, flujoSteps, setFlujoSteps, flujoModalOpen, setFlujoModalOpen, editingStep, setEditingStep, stepForm, setStepForm, tooltipStep, tooltipPos, notify, resolveIc, FILTERED, ICON_CATALOGUE, COLOR_PALETTE, openNewStep, openEditStep, saveStep, deleteStep, moveStep };
+  const ctx = { BG, CARD, CARD2, BDR, TXT, MUT, dark, menu, setMenu, q, setQ, fEst, setFEst, selSol, setSelSol, step, setStep, dnAlert, setDnAlert, submitting, setSubmitting, submitted, setSubmitted, form, setForm, flujoSteps, setFlujoSteps, flujoModalOpen, setFlujoModalOpen, editingStep, setEditingStep, stepForm, setStepForm, tooltipStep, tooltipPos, notify, resolveIc, FILTERED, ICON_CATALOGUE, COLOR_PALETTE, openNewStep, openEditStep, saveStep, deleteStep, moveStep, usuarios, setUsuarios };
   const PAGE_MAP = { dashboard:Dashboard, solicitud:SolicitudForm, solicitudes:Solicitudes, aprobacion:Aprobacion, auditoria:Auditoria, reportes:Reportes, usuarios:Usuarios, config:Config };
   const CurPage = PAGE_MAP[menu] || Dashboard;
   const curNav = NAV.find(n=>n.id===menu);
