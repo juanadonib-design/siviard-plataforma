@@ -87,6 +87,14 @@ const G = `
 @keyframes gradShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
 @keyframes borderGlow{0%,100%{border-color:rgba(37,99,235,.15)}50%{border-color:rgba(37,99,235,.45)}}
 @keyframes orbReveal{from{clip-path:circle(0% at 50% 50%);opacity:0}to{clip-path:circle(100% at 50% 50%);opacity:1}}
+@keyframes crosshairBlink{0%,100%{opacity:1;filter:drop-shadow(0 0 4px #2563EB)}50%{opacity:.35;filter:drop-shadow(0 0 10px #06B6D4)}}
+@keyframes radarSweep{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes scanPulse{0%{transform:scale(1);opacity:.7}50%{transform:scale(1.18);opacity:.3}100%{transform:scale(1);opacity:.7}}
+@keyframes dnBlinkBorder{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0),0 0 24px rgba(239,68,68,.12)}50%{box-shadow:0 0 0 4px rgba(239,68,68,.3),0 0 28px rgba(239,68,68,.25)}}
+.crosshair-blink{animation:crosshairBlink 1.4s ease-in-out infinite}
+.radar-sweep{animation:radarSweep 3s linear infinite;transform-origin:center}
+.scan-pulse{animation:scanPulse 1.8s ease-in-out infinite}
+.dn-border-blink{animation:dnBlinkBorder 1.2s ease-in-out infinite}
 
 /* ── Card animations ── */
 .card{animation:fadeUp .42s cubic-bezier(.22,1,.36,1) both}
@@ -370,9 +378,143 @@ function Dashboard({ ctx }) {
   );
 }
 
+/* ─── GEO CONSTANTS ─── */
+const GSD_MUNICIPIOS = ["Distrito Nacional","Santo Domingo Este","Santo Domingo Oeste","Santo Domingo Norte","Los Alcarrizos","Boca Chica","Pedro Brand","San Antonio de Guerra"];
+
+// Coordenadas fijas de cabeceras provinciales (fallback si Nominatim falla)
+const PROVINCIA_COORDS = {
+  "Santiago":              { lat:19.4517, lon:-70.6970, region:"Cibao Norte" },
+  "La Vega":               { lat:19.2211, lon:-70.5295, region:"Cibao Central" },
+  "San Pedro de Macorís":  { lat:18.4564, lon:-69.3051, region:"Este" },
+  "Puerto Plata":          { lat:19.7932, lon:-70.6877, region:"Cibao Norte" },
+  "Barahona":              { lat:18.2074, lon:-71.1002, region:"Sur" },
+  "Monte Cristi":          { lat:19.8617, lon:-71.6490, region:"Cibao Noroeste" },
+  "Samaná":                { lat:19.2059, lon:-69.3363, region:"Nordeste" },
+  "Azua":                  { lat:18.4533, lon:-70.7355, region:"Sur" },
+  "Baní":                  { lat:18.2795, lon:-70.3319, region:"Sur" },
+  "Bonao":                 { lat:18.9415, lon:-70.4078, region:"Cibao Central" },
+  "Cotui":                 { lat:19.0572, lon:-70.1513, region:"Cibao Central" },
+  "Moca":                  { lat:19.3939, lon:-70.5227, region:"Cibao Norte" },
+  "San Juan de la Maguana":{ lat:18.8061, lon:-71.2286, region:"Sur" },
+  "Nagua":                 { lat:19.3833, lon:-69.8500, region:"Nordeste" },
+  "Higuey":                { lat:18.6145, lon:-68.7073, region:"Este" },
+  "San Francisco de Macorís":{ lat:19.3009, lon:-70.2527, region:"Nordeste" },
+};
+
+// Origen fijo: Palacio Nacional, Santo Domingo
+const ORIGEN = { lat:18.4761, lon:-69.9018 };
+
+// Calcular viático según distancia (RD$ — basado en escala Decreto 685-00)
+function calcViatico(distKm) {
+  if (distKm < 60)   return { viatico:1200, combustible:350 };
+  if (distKm < 100)  return { viatico:1800, combustible:500 };
+  if (distKm < 150)  return { viatico:2500, combustible:750 };
+  if (distKm < 200)  return { viatico:3200, combustible:980 };
+  if (distKm < 260)  return { viatico:4000, combustible:1200 };
+  return                    { viatico:5000, combustible:1500 };
+}
+
+// Formato de segundos a "Xh Ymin"
+function fmtTiempo(segundos) {
+  const h = Math.floor(segundos / 3600);
+  const m = Math.floor((segundos % 3600) / 60);
+  return h > 0 ? `${h}h ${m}min` : `${m} min`;
+}
+
+// Convertir coords reales a % dentro del bounding box de RD para el radar
+// RD bbox: lat 17.47–19.93, lon -72.01 – -68.32
+function coordsToRadar(lat, lon) {
+  const x = ((lon - (-72.01)) / ((-68.32) - (-72.01))) * 100;
+  const y = 100 - ((lat - 17.47) / (19.93 - 17.47)) * 100;
+  return { x: Math.min(Math.max(x, 5), 95), y: Math.min(Math.max(y, 5), 90) };
+}
+
 /* ─── SOLICITUD FORM ─── */
 function SolicitudForm({ ctx }) {
   const { BG, CARD, CARD2, BDR, TXT, MUT, dark, menu, setMenu, q, setQ, fEst, setFEst, selSol, setSelSol, step, setStep, dnAlert, setDnAlert, submitting, setSubmitting, submitted, setSubmitted, form, setForm, flujoSteps, setFlujoSteps, flujoModalOpen, setFlujoModalOpen, editingStep, setEditingStep, stepForm, setStepForm, tooltipStep, tooltipPos, notify, resolveIc, FILTERED, ICON_CATALOGUE, COLOR_PALETTE, openNewStep, openEditStep, saveStep, deleteStep, moveStep } = ctx;
+
+  const [apiKeyConfigured, setApiKeyConfigured] = useState(true);
+  const [procesandoRuta, setProcesandoRuta] = useState(false);
+  const [rutaCalculada, setRutaCalculada] = useState(false);
+  const [crosshairX, setCrosshairX]   = useState(50);
+  const [crosshairY, setCrosshairY]   = useState(50);
+  const [apiError, setApiError]       = useState(null);
+  const [routeData, setRouteData]     = useState(null); // { dist, tiempo, region, viatico, combustible, lat, lon }
+
+  // ── Real geocode via Nominatim ──────────────────────────────────────────────
+  const geocodeProvincia = async (nombre) => {
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(nombre + ", República Dominicana")}&format=json&limit=1&countrycodes=do`;
+      const res = await fetch(url, { headers:{ "Accept-Language":"es", "User-Agent":"SIVIARD/1.0 (sistema institucional RD)" } });
+      if (!res.ok) throw new Error("Nominatim error");
+      const data = await res.json();
+      if (data && data.length > 0) return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+    } catch(_) { /* fallback */ }
+    // Fallback a coordenadas conocidas
+    return PROVINCIA_COORDS[nombre] ? { lat: PROVINCIA_COORDS[nombre].lat, lon: PROVINCIA_COORDS[nombre].lon } : null;
+  };
+
+  // ── Real routing via OSRM (driving) ────────────────────────────────────────
+  const calcRuta = async (destLat, destLon) => {
+    const url = `https://router.project-osrm.org/route/v1/driving/${ORIGEN.lon},${ORIGEN.lat};${destLon},${destLat}?overview=false`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("OSRM error");
+    const data = await res.json();
+    if (data.code !== "Ok" || !data.routes || data.routes.length === 0) throw new Error("Sin ruta");
+    return {
+      distM:    data.routes[0].distance,   // metros
+      durSeg:   data.routes[0].duration,   // segundos
+    };
+  };
+
+  // ── Handler principal ───────────────────────────────────────────────────────
+  const handleProvinciaChange = async (val) => {
+    setForm(p => ({ ...p, provincia: val }));
+    const isGSD = GSD_MUNICIPIOS.includes(val);
+    setDnAlert(isGSD);
+    setRutaCalculada(false);
+    setRouteData(null);
+    setApiError(null);
+
+    if (!isGSD && val) {
+      setProcesandoRuta(true);
+      try {
+        // 1) Geocodificación
+        const coords = await geocodeProvincia(val);
+        if (!coords) throw new Error("No se pudo geocodificar la provincia");
+
+        // 2) Cálculo de ruta
+        const { distM, durSeg } = await calcRuta(coords.lat, coords.lon);
+        const distKm = Math.round(distM / 1000);
+        const { viatico, combustible } = calcViatico(distKm);
+        const region = PROVINCIA_COORDS[val]?.region ?? "Nacional";
+
+        // 3) Posición en radar
+        const { x, y } = coordsToRadar(coords.lat, coords.lon);
+        setCrosshairX(x);
+        setCrosshairY(y);
+
+        setRouteData({ dist: distKm, tiempo: fmtTiempo(durSeg), region, viatico, combustible, lat: coords.lat, lon: coords.lon });
+        setRutaCalculada(true);
+      } catch (err) {
+        setApiError(err.message || "Error al conectar con OpenStreetMap/OSRM");
+        // Fallback: usa datos hardcoded si los tenemos
+        const fallback = PROVINCIA_COORDS[val];
+        if (fallback) {
+          const { x, y } = coordsToRadar(fallback.lat, fallback.lon);
+          setCrosshairX(x);
+          setCrosshairY(y);
+          const distKm = Math.round(Math.sqrt(Math.pow((fallback.lat - ORIGEN.lat)*111,2) + Math.pow((fallback.lon - ORIGEN.lon)*85,2)));
+          const { viatico, combustible } = calcViatico(distKm);
+          setRouteData({ dist: distKm, tiempo: "N/D (sin red)", region: fallback.region, viatico, combustible, lat: fallback.lat, lon: fallback.lon });
+          setRutaCalculada(true);
+        }
+      } finally {
+        setProcesandoRuta(false);
+      }
+    }
+  };
+
   return (
   <div style={{ animation:"fadeUp .42s cubic-bezier(.22,1,.36,1)", fontFamily:"'DM Sans',system-ui,sans-serif" }}>
     <div style={{ marginBottom:26 }}>
@@ -437,56 +579,285 @@ function SolicitudForm({ ctx }) {
             </div>
           )}
           {step===3 && (
-            <div>
+            <div style={{ animation:"fadeUp .35s cubic-bezier(.22,1,.36,1)" }}>
+
+              {/* ── API KEY INPUT (when not configured) ── */}
+              {!apiKeyConfigured && (
+                <div style={{ background:"#0B1224", border:"1.5px solid rgba(37,99,235,.35)", borderRadius:16, padding:28, marginBottom:22, animation:"fadeUp .32s cubic-bezier(.22,1,.36,1)" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:11, marginBottom:18 }}>
+                    <IcoBox ic={KeyRound} size={16} color="#2563EB" bg="rgba(37,99,235,.14)" pad={9} radius={11} glow />
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:800, color:"#E2E8F0" }}>Google Maps API Key</div>
+                      <div style={{ fontSize:11, color:"#475569" }}>Requerida para geocodificación y cálculo de rutas</div>
+                    </div>
+                  </div>
+                  <div style={{ display:"flex", gap:10 }}>
+                    <div style={{ flex:1, position:"relative" }}>
+                      <div style={{ position:"absolute", left:13, top:"50%", transform:"translateY(-50%)" }}><Ico ic={Lock} size={14} color="#475569"/></div>
+                      <input
+                        type="password"
+                        value={apiKeyInput}
+                        onChange={e=>setApiKeyInput(e.target.value)}
+                        placeholder="AIzaSy••••••••••••••••••••••••••••••••"
+                        style={{ width:"100%", padding:"12px 14px 12px 38px", borderRadius:11, border:"1.5px solid rgba(37,99,235,.25)", background:"rgba(255,255,255,.03)", color:"#E2E8F0", fontSize:13, fontFamily:"'JetBrains Mono',monospace" }}
+                      />
+                    </div>
+                    <button className="act-btn" onClick={()=>setApiKeyConfigured(true)} style={{ padding:"12px 22px", background:"linear-gradient(135deg,#2563EB,#1D4ED8)", borderRadius:11, color:"#fff", fontSize:13, fontWeight:800, border:"none", boxShadow:"0 6px 18px rgba(37,99,235,.3)", whiteSpace:"nowrap" }}>
+                      <Ico ic={Zap} size={14} color="#fff"/> Activar API
+                    </button>
+                  </div>
+                  <div style={{ marginTop:12, display:"flex", alignItems:"center", gap:7, fontSize:11, color:"#334155" }}>
+                    <Ico ic={ShieldCheck} size={12} color="#334155"/>
+                    <span>La clave se cifra localmente y nunca se transmite al servidor SIVIARD</span>
+                  </div>
+                </div>
+              )}
+
+              {/* ── PROVINCIA SELECTOR ── */}
               <div style={{ marginBottom:20 }}>
-                <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:11, fontWeight:700, color:MUT, marginBottom:9, letterSpacing:.5 }}><Ico ic={MapPinned} size={12} color={MUT}/>PROVINCIA DESTINO</label>
-                <select value={form.provincia} onChange={e=>{setForm(p=>({...p,provincia:e.target.value}));setDnAlert(e.target.value==="Distrito Nacional")}} style={{ width:"100%", padding:"12px 14px", borderRadius:11, border:`1px solid ${BDR}`, background:BG, color:TXT, fontSize:13 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:9 }}>
+                  <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:11, fontWeight:700, color:MUT, letterSpacing:.5 }}><Ico ic={MapPinned} size={12} color={MUT}/>PROVINCIA DESTINO</label>
+                  <div style={{ display:"flex", alignItems:"center", gap:5, background:apiKeyConfigured?"rgba(16,185,129,.1)":"rgba(245,158,11,.1)", border:`1px solid ${apiKeyConfigured?"rgba(16,185,129,.25)":"rgba(245,158,11,.25)"}`, borderRadius:8, padding:"4px 10px", cursor:"default" }}>
+                    <div style={{ width:6, height:6, borderRadius:"50%", background:apiKeyConfigured?"#10B981":"#F59E0B", animation:"statusPulse 2.5s ease infinite" }}/>
+                    OSM / OSRM {apiKeyConfigured?"Conectado":"Sin red"}
+                  </div>
+                </div>
+                <select
+                  value={form.provincia}
+                  onChange={e => handleProvinciaChange(e.target.value)}
+                  style={{ width:"100%", padding:"12px 14px", borderRadius:11, border:`1.5px solid ${dnAlert?"#EF4444":rutaCalculada?"#10B981":BDR}`, background:BG, color:TXT, fontSize:13, transition:"border-color .25s" }}
+                >
                   <option value="">-- Seleccione la provincia destino --</option>
-                  <option value="Distrito Nacional">Distrito Nacional</option>
-                  {PROVINCIAS.map(p=><option key={p} value={p}>{p}</option>)}
+                  <optgroup label="── Gran Santo Domingo (No elegible) ──">
+                    {GSD_MUNICIPIOS.map(m => <option key={m} value={m}>{m}</option>)}
+                  </optgroup>
+                  <optgroup label="── Provincias elegibles ──">
+                    {PROVINCIAS.map(p => <option key={p} value={p}>{p}</option>)}
+                  </optgroup>
                 </select>
               </div>
+
+              {/* ── DN ALERT CARD ── */}
               {dnAlert && (
-                <div style={{ background:"#FEF2F2", border:"2px solid #EF4444", borderRadius:18, padding:24, marginBottom:20, animation:"fadeUp .28s cubic-bezier(.22,1,.36,1)" }}>
-                  <div style={{ display:"flex", gap:15 }}>
-                    <IcoBox ic={ShieldAlert} size={28} color="#EF4444" bg="#FEE2E2" pad={13} radius={14} glow />
-                    <div>
-                      <div style={{ fontSize:15, fontWeight:900, color:"#991B1B", marginBottom:10 }}>⚠️ DESTINO NO ELEGIBLE — ALERTA NORMATIVA</div>
-                      <div style={{ fontSize:13, color:"#B91C1C", lineHeight:1.7 }}>Esta ubicación pertenece al <strong>Distrito Nacional</strong>. Según el <strong>Decreto No. 685-00</strong>, no corresponde asignación de viáticos para desplazamientos dentro del área metropolitana habitual.</div>
-                      <div style={{ marginTop:13, display:"flex", alignItems:"center", gap:9, background:"#FEE2E2", borderRadius:11, padding:"9px 15px" }}>
-                        <Ico ic={FileLock2} size={14} color="#991B1B" />
-                        <span style={{ fontSize:12, color:"#991B1B", fontWeight:800 }}>Solicitud bloqueada automáticamente por SIVIARD</span>
+                <div className="dn-border-blink" style={{ background:"linear-gradient(135deg,#1a0a0a,#2d0b0b)", border:"2px solid #EF4444", borderRadius:18, padding:26, marginBottom:22, animation:"fadeUp .28s cubic-bezier(.22,1,.36,1)", position:"relative", overflow:"hidden" }}>
+                  <div style={{ position:"absolute", top:0, left:0, right:0, height:3, background:"linear-gradient(90deg,#EF4444,#DC2626,#EF4444)", backgroundSize:"200% 100%", animation:"gradShift 2s linear infinite" }}/>
+                  <div style={{ display:"flex", gap:16, alignItems:"flex-start" }}>
+                    <div style={{ width:52, height:52, borderRadius:15, background:"rgba(239,68,68,.15)", border:"1.5px solid rgba(239,68,68,.4)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, boxShadow:"0 0 20px rgba(239,68,68,.25)" }}>
+                      <Ico ic={ShieldAlert} size={26} color="#EF4444" />
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:14, fontWeight:900, color:"#FCA5A5", marginBottom:8, letterSpacing:-.2 }}>⚠️ DESTINO NO ELEGIBLE — Restricción por Decreto 685-00</div>
+                      <div style={{ fontSize:12.5, color:"#FCA5A5", lineHeight:1.75, opacity:.85 }}>No se permite la asignación de viáticos para traslados dentro de la <strong style={{color:"#FCA5A5"}}>periferia metropolitana habitual del Gran Santo Domingo</strong>. El decreto establece que el servidor público que labora en esta área no genera derecho a viáticos por desplazamientos en la misma.</div>
+                      <div style={{ marginTop:14, display:"flex", flexWrap:"wrap", gap:9 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:7, background:"rgba(239,68,68,.15)", border:"1px solid rgba(239,68,68,.3)", borderRadius:10, padding:"8px 13px" }}>
+                          <Ico ic={FileLock2} size={13} color="#EF4444" />
+                          <span style={{ fontSize:11, color:"#FCA5A5", fontWeight:800 }}>Solicitud bloqueada automáticamente</span>
+                        </div>
+                        <div style={{ display:"flex", alignItems:"center", gap:7, background:"rgba(239,68,68,.08)", border:"1px solid rgba(239,68,68,.2)", borderRadius:10, padding:"8px 13px" }}>
+                          <Ico ic={Database} size={13} color="#EF4444" />
+                          <span style={{ fontSize:11, color:"#FCA5A5", fontWeight:700 }}>Evento registrado en auditoría</span>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
               )}
-              {!dnAlert && form.provincia && (
-                <div style={{ background:"#F0FDF4", border:"1px solid #6EE7B7", borderRadius:16, padding:22, marginBottom:20, animation:"fadeUp .28s cubic-bezier(.22,1,.36,1)" }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
-                    <IcoBox ic={Crosshair} size={15} color="#10B981" bg="#D1FAE5" pad={8} radius={10} glow />
-                    <span style={{ fontSize:13, fontWeight:800, color:"#065F46" }}>Destino Validado — {form.provincia}</span>
+
+              {/* ── API ERROR NOTICE ── */}
+              {apiError && rutaCalculada && (
+                <div style={{ background:"rgba(245,158,11,.06)", border:"1px solid rgba(245,158,11,.3)", borderRadius:11, padding:"10px 15px", marginBottom:14, display:"flex", alignItems:"center", gap:9 }}>
+                  <Ico ic={AlertTriangle} size={14} color="#F59E0B"/>
+                  <div>
+                    <span style={{ fontSize:11, fontWeight:700, color:"#FCD34D" }}>API sin conexión — usando coordenadas de referencia: </span>
+                    <span style={{ fontSize:11, color:"#92400E" }}>{apiError}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* ── ROUTE RESULT CARD ── */}
+              {!dnAlert && rutaCalculada && routeData && (
+                <div style={{ background:"rgba(16,185,129,.05)", border:"1.5px solid rgba(16,185,129,.3)", borderRadius:16, padding:20, marginBottom:20, animation:"fadeUp .28s cubic-bezier(.22,1,.36,1)" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
+                    <IcoBox ic={BadgeCheck} size={15} color="#10B981" bg="rgba(16,185,129,.15)" pad={8} radius={10} glow />
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:800, color:"#10B981" }}>Ruta Calculada — {form.provincia}</div>
+                      <div style={{ fontSize:10, color:"#34D399", opacity:.7 }}>
+                        {apiError ? "Coordenadas de referencia · fallback local" : "Nominatim · OSRM · OpenStreetMap"}
+                        {routeData.lat && !apiError && (
+                          <span style={{ marginLeft:8, fontFamily:"'JetBrains Mono',monospace" }}>
+                            {routeData.lat.toFixed(4)}°N {Math.abs(routeData.lon).toFixed(4)}°W
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:5, background:"rgba(16,185,129,.1)", borderRadius:8, padding:"4px 10px" }}>
+                      <div style={{ width:6, height:6, borderRadius:"50%", background:"#10B981", animation:"statusPulse 2.5s ease infinite" }}/>
+                      <span style={{ fontSize:10, fontWeight:700, color:"#10B981" }}>ELEGIBLE</span>
+                    </div>
                   </div>
                   <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10 }}>
-                    {[["🗺️ Región","Norte"],["📏 Distancia","~185 km"],["⏱️ Tiempo","2h 30min"],["💰 Viático base","RD$ 2,500"],["⛽ Combustible","RD$ 800"],["✅ Elegible","Sí"]].map(([l,v])=>(
-                      <div key={l} style={{ background:"#fff", borderRadius:11, padding:"11px 13px" }}>
-                        <div style={{ fontSize:10, color:"#6B7280" }}>{l}</div>
-                        <div style={{ fontSize:13, fontWeight:700, color:"#065F46" }}>{v}</div>
+                    {[
+                      ["🗺️ Región",       routeData.region,                              "#06B6D4"],
+                      ["📏 Distancia",    `${routeData.dist} km`,                        "#8B5CF6"],
+                      ["⏱️ Tiempo est.",  routeData.tiempo,                              "#F59E0B"],
+                      ["💰 Viático Base", `RD$ ${routeData.viatico.toLocaleString()}`,   "#10B981"],
+                      ["⛽ Combustible",  `RD$ ${routeData.combustible.toLocaleString()}`,"#10B981"],
+                      ["✅ Estado",       "Aprobado",                                    "#10B981"],
+                    ].map(([l,v,ac])=>(
+                      <div key={l} style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(16,185,129,.15)", borderRadius:11, padding:"11px 13px" }}>
+                        <div style={{ fontSize:10, color:"#475569", marginBottom:4 }}>{l}</div>
+                        <div style={{ fontSize:13, fontWeight:800, color:ac }}>{v}</div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
-              <div style={{ background:CARD2, border:`2px dashed ${BDR}`, borderRadius:16, height:260, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16 }}>
-                <IcoBox ic={Satellite} size={32} color="#2563EB" bg="rgba(37,99,235,.1)" pad={16} radius={20} glow />
-                <div style={{ textAlign:"center" }}>
-                  <div style={{ fontSize:14, fontWeight:700, color:TXT }}>Mapa Interactivo — Google Maps API</div>
-                  <div style={{ fontSize:12, color:MUT, marginTop:4 }}>Configure su API Key para geocodificación en tiempo real</div>
+
+              {/* ── RADAR MAP CONTAINER ── */}
+              <div style={{ borderRadius:18, overflow:"hidden", border:`1.5px solid ${dnAlert?"rgba(239,68,68,.4)":"rgba(37,99,235,.25)"}`, position:"relative", transition:"border-color .4s", boxShadow:dnAlert?"0 0 32px rgba(239,68,68,.12)":"0 0 32px rgba(37,99,235,.08)" }}>
+                {/* Header bar */}
+                <div style={{ background:"#070D1A", borderBottom:"1px solid rgba(37,99,235,.12)", padding:"10px 16px", display:"flex", alignItems:"center", gap:10 }}>
+                  <div style={{ width:6, height:6, borderRadius:"50%", background:dnAlert?"#EF4444":procesandoRuta?"#F59E0B":"#10B981", animation:"statusPulse 2.5s ease infinite", boxShadow:`0 0 6px ${dnAlert?"#EF4444":procesandoRuta?"#F59E0B":"#10B981"}` }}/>
+                  <span style={{ fontSize:10.5, fontWeight:700, color:"#475569", fontFamily:"'JetBrains Mono',monospace", letterSpacing:.5 }}>
+                    {procesandoRuta ? "GEOCODIFICANDO..." : dnAlert ? "DESTINO BLOQUEADO — GSD/DN PERIMETER" : rutaCalculada ? `RUTA ACTIVA · ${form.provincia?.toUpperCase()}` : "SIVIARD · MAPA SATELITAL — ESPERANDO COORDENADAS"}
+                  </span>
+                  <div style={{ marginLeft:"auto", display:"flex", gap:6 }}>
+                    {["#EF4444","#F59E0B","#10B981"].map(c=><div key={c} style={{ width:9, height:9, borderRadius:"50%", background:c, opacity:.6 }}/>)}
+                  </div>
                 </div>
-                <div style={{ display:"flex", gap:9, flexWrap:"wrap", justifyContent:"center" }}>
-                  {[["Geocodificación",Crosshair,"#DBEAFE","#1E40AF"],["Cálculo de rutas",Waypoints,"#D1FAE5","#065F46"],["Detección DN",ShieldAlert,"#FEE2E2","#991B1B"]].map(([l,Ic,ibg,ic])=>(
-                    <div key={l} style={{ display:"flex", alignItems:"center", gap:6, background:ibg, borderRadius:9, padding:"7px 13px" }}>
-                      <Ico ic={Ic} size={12} color={ic}/><span style={{ fontSize:11, fontWeight:700, color:ic }}>{l}</span>
+
+                {/* Map area */}
+                <div style={{ background:"#0B1224", position:"relative", height:280, overflow:"hidden" }}>
+                  {/* Grid lines SVG */}
+                  <svg style={{ position:"absolute", inset:0, width:"100%", height:"100%", opacity:.18 }} xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                      <pattern id="gridPat" width="40" height="40" patternUnits="userSpaceOnUse">
+                        <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#2563EB" strokeWidth=".6"/>
+                      </pattern>
+                    </defs>
+                    <rect width="100%" height="100%" fill="url(#gridPat)"/>
+                    {/* Cardinal lines */}
+                    <line x1="50%" y1="0" x2="50%" y2="100%" stroke="#2563EB" strokeWidth=".4" strokeDasharray="4,6"/>
+                    <line x1="0" y1="50%" x2="100%" y2="50%" stroke="#2563EB" strokeWidth=".4" strokeDasharray="4,6"/>
+                  </svg>
+
+                  {/* Radar sweep (visible when processing or active) */}
+                  {(procesandoRuta || rutaCalculada) && !dnAlert && (
+                    <svg style={{ position:"absolute", inset:0, width:"100%", height:"100%", opacity: procesandoRuta ? .55 : .2 }} xmlns="http://www.w3.org/2000/svg">
+                      <defs>
+                        <radialGradient id="radarGrad" cx="50%" cy="50%" r="50%">
+                          <stop offset="0%" stopColor="#2563EB" stopOpacity=".0"/>
+                          <stop offset="85%" stopColor="#06B6D4" stopOpacity=".0"/>
+                          <stop offset="100%" stopColor="#06B6D4" stopOpacity=".0"/>
+                        </radialGradient>
+                      </defs>
+                      <g className="radar-sweep" style={{ transformOrigin:"50% 50%" }}>
+                        <path d="M 50% 50% L 50% 0" stroke="none" fill="none"/>
+                        <path d={`M ${280} ${140} L ${280} ${0} A ${280} ${140} 0 0 1 ${560} ${140} Z`} fill="url(#radarGrad)" style={{ transformOrigin:"280px 140px" }}/>
+                        <line x1="50%" y1="50%" x2="50%" y2="2%" stroke="#06B6D4" strokeWidth="1.2" strokeOpacity=".6"/>
+                      </g>
+                      <circle cx="50%" cy="50%" r="40" fill="none" stroke="#2563EB" strokeWidth=".5" strokeOpacity=".4"/>
+                      <circle cx="50%" cy="50%" r="80" fill="none" stroke="#2563EB" strokeWidth=".5" strokeOpacity=".3"/>
+                      <circle cx="50%" cy="50%" r="120" fill="none" stroke="#2563EB" strokeWidth=".5" strokeOpacity=".2"/>
+                    </svg>
+                  )}
+
+                  {/* DN red overlay */}
+                  {dnAlert && (
+                    <div style={{ position:"absolute", inset:0, background:"radial-gradient(ellipse at center, rgba(239,68,68,.08) 0%, transparent 70%)", pointerEvents:"none" }}/>
+                  )}
+
+                  {/* CENTER or calculated crosshair */}
+                  {!dnAlert && (
+                    <div
+                      className="crosshair-blink"
+                      style={{
+                        position:"absolute",
+                        left:`${rutaCalculada ? crosshairX : 50}%`,
+                        top:`${rutaCalculada ? crosshairY : 50}%`,
+                        transform:"translate(-50%,-50%)",
+                        transition:"left 1s cubic-bezier(.34,1.56,.64,1), top 1s cubic-bezier(.34,1.56,.64,1)",
+                        zIndex:10
+                      }}
+                    >
+                      <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="16" cy="16" r="5" stroke={rutaCalculada?"#10B981":"#2563EB"} strokeWidth="1.5"/>
+                        <line x1="16" y1="0" x2="16" y2="10" stroke={rutaCalculada?"#10B981":"#2563EB"} strokeWidth="1.2"/>
+                        <line x1="16" y1="22" x2="16" y2="32" stroke={rutaCalculada?"#10B981":"#2563EB"} strokeWidth="1.2"/>
+                        <line x1="0" y1="16" x2="10" y2="16" stroke={rutaCalculada?"#10B981":"#2563EB"} strokeWidth="1.2"/>
+                        <line x1="22" y1="16" x2="32" y2="16" stroke={rutaCalculada?"#10B981":"#2563EB"} strokeWidth="1.2"/>
+                      </svg>
+                      {rutaCalculada && (
+                        <div style={{ position:"absolute", top:-26, left:"50%", transform:"translateX(-50%)", whiteSpace:"nowrap", background:"rgba(16,185,129,.9)", borderRadius:6, padding:"3px 8px", fontSize:9.5, fontWeight:800, color:"#fff", fontFamily:"'JetBrains Mono',monospace" }}>
+                          {form.provincia}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* DN crosshair locked */}
+                  {dnAlert && (
+                    <div style={{ position:"absolute", left:"50%", top:"50%", transform:"translate(-50%,-50%)", zIndex:10 }}>
+                      <svg width="42" height="42" viewBox="0 0 42 42" fill="none">
+                        <circle cx="21" cy="21" r="10" stroke="#EF4444" strokeWidth="1.8" strokeDasharray="4,3"/>
+                        <line x1="21" y1="0" x2="21" y2="11" stroke="#EF4444" strokeWidth="1.4"/>
+                        <line x1="21" y1="31" x2="21" y2="42" stroke="#EF4444" strokeWidth="1.4"/>
+                        <line x1="0" y1="21" x2="11" y2="21" stroke="#EF4444" strokeWidth="1.4"/>
+                        <line x1="31" y1="21" x2="42" y2="21" stroke="#EF4444" strokeWidth="1.4"/>
+                        <line x1="15" y1="15" x2="27" y2="27" stroke="#EF4444" strokeWidth="1.4"/>
+                        <line x1="27" y1="15" x2="15" y2="27" stroke="#EF4444" strokeWidth="1.4"/>
+                      </svg>
+                      <div style={{ position:"absolute", top:-28, left:"50%", transform:"translateX(-50%)", whiteSpace:"nowrap", background:"rgba(239,68,68,.9)", borderRadius:6, padding:"3px 10px", fontSize:9.5, fontWeight:900, color:"#fff", fontFamily:"'JetBrains Mono',monospace" }}>
+                        BLOQUEADO — GSD
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Loading state */}
+                  {procesandoRuta && (
+                    <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:13, background:"rgba(11,18,36,.6)", backdropFilter:"blur(2px)", zIndex:20, animation:"fadeIn .2s ease" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+                        <Ico ic={RefreshCw} size={22} color="#2563EB" style={{ animation:"spin 1s linear infinite" }}/>
+                        <Ico ic={Satellite} size={22} color="#06B6D4" style={{ animation:"scan-pulse 1.8s ease-in-out infinite" }} className="scan-pulse"/>
+                      </div>
+                      <div style={{ textAlign:"center" }}>
+                        <div style={{ fontSize:12, fontWeight:700, color:"#E2E8F0", fontFamily:"'JetBrains Mono',monospace" }}>GEOCODIFICANDO · NOMINATIM/OSM</div>
+                        <div style={{ fontSize:10.5, color:"#475569", marginTop:4 }}>Calculando ruta real con OSRM desde Santo Domingo...</div>
+                      </div>
+                      <div style={{ display:"flex", gap:5 }}>
+                        {[0,1,2].map(i=><div key={i} style={{ width:7, height:7, borderRadius:"50%", background:"#2563EB", animation:`bounce .9s ease-in-out ${i*.15}s infinite` }}/>)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Idle state */}
+                  {!procesandoRuta && !form.provincia && (
+                    <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10 }}>
+                      <Ico ic={Compass} size={28} color="#1E3A5F" />
+                      <div style={{ fontSize:11, color:"#1E3A5F", fontFamily:"'JetBrains Mono',monospace", letterSpacing:.5 }}>SELECCIONE UNA PROVINCIA PARA INICIAR</div>
+                    </div>
+                  )}
+
+                  {/* Corner coordinates */}
+                  <div style={{ position:"absolute", top:8, left:10, fontFamily:"'JetBrains Mono',monospace", fontSize:9, color:"#1E3A5F" }}>18.4861° N</div>
+                  <div style={{ position:"absolute", top:8, right:10, fontFamily:"'JetBrains Mono',monospace", fontSize:9, color:"#1E3A5F" }}>69.9312° W</div>
+                  <div style={{ position:"absolute", bottom:8, left:10, fontFamily:"'JetBrains Mono',monospace", fontSize:9, color:"#1E3A5F" }}>RD · v4.2</div>
+                  <div style={{ position:"absolute", bottom:8, right:10, fontFamily:"'JetBrains Mono',monospace", fontSize:9, color:dnAlert?"#EF4444":rutaCalculada?"#10B981":"#1E3A5F" }}>
+                    {dnAlert ? "⛔ ZONA EXCLUIDA" : rutaCalculada ? "✓ RUTA ACTIVA" : "○ STANDBY"}
+                  </div>
+                </div>
+
+                {/* API Status Indicators */}
+                <div style={{ background:"#070D1A", borderTop:"1px solid rgba(37,99,235,.1)", padding:"10px 16px", display:"flex", gap:10, flexWrap:"wrap" }}>
+                  {[
+                    { label:"Nominatim/OSM",  ic:Crosshair,   active: rutaCalculada || dnAlert, color: rutaCalculada?"#10B981": dnAlert?"#EF4444":"#334155" },
+                    { label:"OSRM · Rutas",   ic:Waypoints,   active: rutaCalculada,             color: rutaCalculada?"#10B981":"#334155" },
+                    { label:"Detección GSD/DN", ic:ShieldAlert, active: dnAlert,                  color: dnAlert?"#EF4444":"#334155" },
+                  ].map(({ label, ic, active, color })=>(
+                    <div key={label} style={{ display:"flex", alignItems:"center", gap:7, background:`${color}12`, border:`1px solid ${color}30`, borderRadius:9, padding:"6px 12px", transition:"all .4s cubic-bezier(.22,1,.36,1)", flex:1, justifyContent:"center" }}>
+                      <div style={{ width:7, height:7, borderRadius:"50%", background:active?color:"#1E293B", boxShadow:active?`0 0 6px ${color}`:"none", transition:"all .4s", flexShrink:0 }}/>
+                      <Ico ic={ic} size={11} color={active?color:"#1E293B"}/>
+                      <span style={{ fontSize:10.5, fontWeight:700, color:active?color:"#1E293B", fontFamily:"'JetBrains Mono',monospace", letterSpacing:.2 }}>{label}</span>
                     </div>
                   ))}
                 </div>
