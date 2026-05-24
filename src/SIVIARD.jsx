@@ -1635,356 +1635,108 @@ function Aprobacion({ ctx }) {
   );
 }
 
-/* ─── HISTORIAL DE TRAZABILIDAD ─── */
-function Historial({ ctx }) {
+
+/* ─── AUDITORIA (fusionada con Trazabilidad) ─── */
+function Auditoria({ ctx }) {
   const { BG, CARD, CARD2, BDR, TXT, MUT, dark, notify } = ctx;
-  const [selId, setSelId] = useState("VIA-2025-001");
+  const [tab, setTab] = useState("bitacora");
+
+  /* ── tab: trazabilidad ── */
+  const [selId, setSelId]         = useState("VIA-2025-001");
   const [filterTipo, setFilterTipo] = useState("Todos");
-  const [busq, setBusq] = useState("");
+  const [busq, setBusq]           = useState("");
   const [expandedEv, setExpandedEv] = useState(null);
   const [exportando, setExportando] = useState(false);
 
-  const sol = SOLICITUDES.find(s => s.id === selId);
+  const sol        = SOLICITUDES.find(s => s.id === selId);
   const eventosRaw = HISTORIAL_EVENTOS[selId] || [];
-  const eventos = eventosRaw.filter(ev => {
+  const eventos    = eventosRaw.filter(ev => {
     const tipoOk = filterTipo === "Todos" || TIPO_EVENTO[ev.tipo]?.label === filterTipo;
     const busqOk = !busq || ev.accion.toLowerCase().includes(busq.toLowerCase()) || ev.usuario.toLowerCase().includes(busq.toLowerCase()) || ev.detalle.toLowerCase().includes(busq.toLowerCase());
     return tipoOk && busqOk;
   });
-
   const estadoFinal = eventosRaw[eventosRaw.length - 1]?.tipo;
   const duracion = (() => {
     if (eventosRaw.length < 2) return "—";
-    const t0 = new Date(eventosRaw[0].ts);
-    const t1 = new Date(eventosRaw[eventosRaw.length - 1].ts);
-    const diff = Math.round((t1 - t0) / (1000 * 60 * 60));
+    const diff = Math.round((new Date(eventosRaw[eventosRaw.length-1].ts) - new Date(eventosRaw[0].ts)) / (1000*60*60));
     return diff < 24 ? `${diff}h` : `${Math.round(diff/24)}d ${diff%24}h`;
   })();
+  const accentFor = (tipo) => TIPO_EVENTO[tipo]?.color || "#64748B";
+  const bgFor     = (tipo) => TIPO_EVENTO[tipo]?.bg    || "rgba(100,116,139,.1)";
 
   const handleExport = () => {
     setExportando(true);
     setTimeout(() => {
-      const rows = ["ID,Timestamp,Usuario,IP,Acción,Detalle,Hash", ...eventosRaw.map(e =>
-        `${selId},${e.ts},${e.usuario},${e.ip},"${e.accion}","${e.detalle}",${e.hash}`
-      )].join("\n");
-      const blob = new Blob([rows], { type:"text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = `SIVIARD_trazabilidad_${selId}.csv`; a.click();
-      URL.revokeObjectURL(url);
+      const rows = ["ID,Timestamp,Usuario,IP,Acción,Detalle,Hash",
+        ...eventosRaw.map(e => `${selId},${e.ts},${e.usuario},${e.ip},"${e.accion}","${e.detalle}",${e.hash}`)
+      ].join("\n");
+      const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([rows],{type:"text/csv"})), download:`SIVIARD_trazabilidad_${selId}.csv` });
+      a.click();
       setExportando(false);
-      notify(`Log de trazabilidad ${selId} exportado exitosamente`);
+      notify(`Log ${selId} exportado exitosamente`);
     }, 900);
   };
 
-  const accentFor = (tipo) => TIPO_EVENTO[tipo]?.color || "#64748B";
-  const bgFor     = (tipo) => TIPO_EVENTO[tipo]?.bg    || "rgba(100,116,139,.1)";
-  const IcFor     = (tipo) => TIPO_EVENTO[tipo]?.ic    || FileText;
+  /* ── shared KPIs (shown on both tabs) ── */
+  const kpis = [
+    ["248", "Eventos totales",    Database,     "#2563EB"],
+    [Object.values(HISTORIAL_EVENTOS).flat().length, "Con trazabilidad", GitBranch, "#10B981"],
+    ["3",   "Alertas activas",    TriangleAlert,"#EF4444"],
+    ["94.2%","Cumplimiento",      Gauge,         "#F59E0B"],
+  ];
+
+  /* ── tab styles ── */
+  const tabBtn = (id, label, Ic, color) => {
+    const act = tab === id;
+    return (
+      <button
+        key={id}
+        onClick={() => setTab(id)}
+        style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 18px", borderRadius:"12px 12px 0 0", border:`1px solid ${act ? BDR : "transparent"}`, borderBottom:act?`1px solid ${CARD}`:"none", background:act?CARD:CARD2, color:act?color:MUT, fontSize:13, fontWeight:act?800:500, cursor:"pointer", transition:"all .2s", marginBottom:act?-1:0 }}
+      >
+        <Ico ic={Ic} size={14} color={act?color:MUT}/>
+        {label}
+        {act && <div style={{ width:6, height:6, borderRadius:"50%", background:color, boxShadow:`0 0 6px ${color}`, marginLeft:2 }}/>}
+      </button>
+    );
+  };
 
   return (
   <div style={{ animation:"fadeUp .42s cubic-bezier(.22,1,.36,1)", fontFamily:"'DM Sans',system-ui,sans-serif" }}>
 
-    {/* ── HEADER ── */}
-    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", marginBottom:24 }}>
+    {/* HEADER */}
+    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", marginBottom:22 }}>
       <div>
         <div style={{ display:"flex", alignItems:"center", gap:11, marginBottom:5 }}>
-          <div style={{ width:4, height:24, borderRadius:2, background:"linear-gradient(180deg,#06B6D4,#8B5CF6)" }} />
-          <h2 style={{ fontSize:23, fontWeight:900, color:TXT, letterSpacing:-.7 }}>Historial de Trazabilidad</h2>
+          <div style={{ width:4, height:24, borderRadius:2, background:"linear-gradient(180deg,#8B5CF6,#06B6D4)" }} />
+          <h2 style={{ fontSize:23, fontWeight:900, color:TXT, letterSpacing:-.7 }}>Auditoría & Trazabilidad</h2>
         </div>
-        <p style={{ color:MUT, fontSize:13, paddingLeft:15 }}>Timeline completo por solicitud · Auditoría inmutable</p>
+        <p style={{ color:MUT, fontSize:13, paddingLeft:15 }}>Bitácora del sistema · Timeline completo por solicitud · Registros inmutables</p>
       </div>
-      <button
-        className="act-btn"
-        onClick={handleExport}
-        style={{ padding:"11px 20px", background:exportando?"#334155":"linear-gradient(135deg,#06B6D4,#0891B2)", borderRadius:13, color:"#fff", fontSize:13, fontWeight:800, border:"none", boxShadow:"0 8px 18px rgba(6,182,212,.28)", gap:8, display:"flex", alignItems:"center" }}
-      >
-        <Ico ic={exportando ? RefreshCw : Download} size={15} color="#fff" style={exportando ? { animation:"spin 1s linear infinite" } : {}}/>
-        {exportando ? "Exportando..." : "Exportar CSV"}
-      </button>
+      {tab === "trazabilidad" && (
+        <button className="act-btn" onClick={handleExport}
+          style={{ padding:"11px 20px", background:exportando?"#334155":"linear-gradient(135deg,#06B6D4,#0891B2)", borderRadius:13, color:"#fff", fontSize:13, fontWeight:800, border:"none", boxShadow:"0 8px 18px rgba(6,182,212,.28)", gap:8, display:"flex", alignItems:"center" }}>
+          <Ico ic={exportando?RefreshCw:Download} size={15} color="#fff" style={exportando?{animation:"spin 1s linear infinite"}:{}}/>
+          {exportando ? "Exportando..." : "Exportar CSV"}
+        </button>
+      )}
+      {tab === "bitacora" && (
+        <div style={{ display:"flex", gap:8 }}>
+          <button className="act-btn" style={{ padding:"10px 16px", background:"rgba(37,99,235,.08)", border:`1px solid rgba(37,99,235,.15)`, borderRadius:11, color:"#2563EB", fontSize:12, fontWeight:700, gap:6, display:"flex", alignItems:"center" }}>
+            <Ico ic={Download} size={13} color="#2563EB"/> CSV
+          </button>
+          <button className="act-btn" style={{ padding:"10px 16px", background:"rgba(239,68,68,.08)", border:`1px solid rgba(239,68,68,.15)`, borderRadius:11, color:"#EF4444", fontSize:12, fontWeight:700, gap:6, display:"flex", alignItems:"center" }}>
+            <Ico ic={FileBarChart2} size={13} color="#EF4444"/> PDF
+          </button>
+        </div>
+      )}
     </div>
 
-    {/* ── KPI BAR ── */}
-    <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:22 }}>
-      {[
-        ["Total Solicitudes", SOLICITUDES.length, Database, "#2563EB"],
-        ["Con Trazabilidad Completa", Object.keys(HISTORIAL_EVENTOS).length, GitBranch, "#10B981"],
-        ["Eventos Registrados", Object.values(HISTORIAL_EVENTOS).flat().length, Activity, "#8B5CF6"],
-        ["Bloqueos GSD/DN", Object.values(HISTORIAL_EVENTOS).flat().filter(e=>e.tipo==="bloqueo").length, ShieldAlert, "#EF4444"],
-      ].map(([l,v,Ic,c]) => (
+    {/* KPI BAR */}
+    <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:20 }}>
+      {kpis.map(([v,l,Ic,c]) => (
         <div key={l} className="hover-lift" style={{ background:CARD, borderRadius:16, padding:"18px 20px", border:`1px solid ${BDR}`, display:"flex", gap:14, alignItems:"center" }}>
           <IcoBox ic={Ic} size={20} color={c} bg={`${c}18`} pad={11} radius={12} glow />
-          <div>
-            <div style={{ fontSize:26, fontWeight:900, color:c, letterSpacing:-1.2, lineHeight:1 }}>{v}</div>
-            <div style={{ fontSize:11, color:MUT, marginTop:3 }}>{l}</div>
-          </div>
-        </div>
-      ))}
-    </div>
-
-    {/* ── MAIN GRID: selector + timeline ── */}
-    <div style={{ display:"grid", gridTemplateColumns:"280px 1fr", gap:18 }}>
-
-      {/* LEFT: solicitud picker */}
-      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-        <div style={{ background:CARD, borderRadius:16, border:`1px solid ${BDR}`, overflow:"hidden" }}>
-          <div style={{ padding:"14px 16px", borderBottom:`1px solid ${BDR}`, background:CARD2 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-              <IcoBox ic={ClipboardList} size={13} color="#06B6D4" bg="rgba(6,182,212,.1)" pad={7} radius={8} glow />
-              <span style={{ fontSize:12, fontWeight:800, color:TXT }}>Solicitudes</span>
-            </div>
-            <div style={{ position:"relative" }}>
-              <div style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)" }}><Ico ic={Search} size={12} color={MUT}/></div>
-              <input
-                value={busq}
-                onChange={e => setBusq(e.target.value)}
-                placeholder="Buscar evento..."
-                style={{ width:"100%", padding:"8px 10px 8px 28px", borderRadius:9, border:`1px solid ${BDR}`, background:BG, color:TXT, fontSize:11 }}
-              />
-            </div>
-          </div>
-          <div style={{ maxHeight:440, overflowY:"auto" }}>
-            {SOLICITUDES.map(s => {
-              const evs = HISTORIAL_EVENTOS[s.id] || [];
-              const last = evs[evs.length - 1];
-              const act = selId === s.id;
-              return (
-                <div
-                  key={s.id}
-                  onClick={() => { setSelId(s.id); setExpandedEv(null); setFilterTipo("Todos"); }}
-                  style={{ padding:"13px 16px", borderBottom:`1px solid ${BDR}`, cursor:"pointer", background:act?`rgba(6,182,212,.06)`:"transparent", borderLeft:`3px solid ${act?"#06B6D4":"transparent"}`, transition:"all .2s" }}
-                  onMouseOver={e => !act && (e.currentTarget.style.background = dark?"rgba(255,255,255,.03)":"rgba(0,0,0,.02)")}
-                  onMouseOut={e  => !act && (e.currentTarget.style.background = "transparent")}
-                >
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6 }}>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:11.5, fontWeight:800, color:act?"#06B6D4":TXT, fontFamily:"'JetBrains Mono',monospace" }}>{s.id}</div>
-                      <div style={{ fontSize:11, color:MUT, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.empleado}</div>
-                      <div style={{ fontSize:10, color:MUT, opacity:.7, marginTop:2 }}>{s.provincia} · RD${s.monto.toLocaleString()}</div>
-                    </div>
-                    <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4, flexShrink:0 }}>
-                      <Chip label={s.estado}/>
-                      <div style={{ fontSize:9.5, color:MUT, fontFamily:"'JetBrains Mono',monospace" }}>{evs.length} ev.</div>
-                    </div>
-                  </div>
-                  {act && last && (
-                    <div style={{ marginTop:7, display:"flex", alignItems:"center", gap:5 }}>
-                      <div style={{ width:5, height:5, borderRadius:"50%", background:accentFor(last.tipo), boxShadow:`0 0 5px ${accentFor(last.tipo)}` }}/>
-                      <span style={{ fontSize:9.5, color:accentFor(last.tipo), fontWeight:700 }}>{last.accion}</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Filtro tipo evento */}
-        <div style={{ background:CARD, borderRadius:14, border:`1px solid ${BDR}`, padding:"14px 16px" }}>
-          <div style={{ fontSize:10.5, fontWeight:700, color:MUT, marginBottom:10, letterSpacing:.5 }}>FILTRAR POR TIPO</div>
-          <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-            {["Todos", ...Object.values(TIPO_EVENTO).map(t=>t.label)].map(tipo => (
-              <button
-                key={tipo}
-                onClick={() => setFilterTipo(tipo)}
-                style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", borderRadius:9, border:`1px solid ${filterTipo===tipo?`${Object.values(TIPO_EVENTO).find(t=>t.label===tipo)?.color||"#06B6D4"}`:BDR}`, background:filterTipo===tipo?`${Object.values(TIPO_EVENTO).find(t=>t.label===tipo)?.bg||"rgba(6,182,212,.1)"}`:BG, cursor:"pointer", textAlign:"left", color:filterTipo===tipo?(Object.values(TIPO_EVENTO).find(t=>t.label===tipo)?.color||"#06B6D4"):MUT, fontSize:11.5, fontWeight:filterTipo===tipo?700:500, transition:"all .18s" }}
-              >
-                {tipo !== "Todos" && <div style={{ width:7, height:7, borderRadius:"50%", background:Object.values(TIPO_EVENTO).find(t=>t.label===tipo)?.color||"#06B6D4", flexShrink:0 }}/>}
-                {tipo === "Todos" && <Ico ic={Layers} size={11} color={MUT}/>}
-                {tipo}
-                <span style={{ marginLeft:"auto", fontSize:10, opacity:.6 }}>
-                  {tipo==="Todos" ? eventosRaw.length : eventosRaw.filter(e=>TIPO_EVENTO[e.tipo]?.label===tipo).length}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* RIGHT: timeline */}
-      <div style={{ background:CARD, borderRadius:18, border:`1px solid ${BDR}`, overflow:"hidden" }}>
-
-        {/* Timeline header */}
-        <div style={{ padding:"16px 22px", borderBottom:`1px solid ${BDR}`, background:CARD2, display:"flex", alignItems:"center", gap:12 }}>
-          <div style={{ width:44, height:44, borderRadius:14, background:`linear-gradient(135deg,${accentFor(estadoFinal)},${accentFor(estadoFinal)}99)`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, boxShadow:`0 6px 16px ${accentFor(estadoFinal)}35` }}>
-            <span style={{ fontSize:13, fontWeight:900, color:"#fff" }}>{sol?.avatar}</span>
-          </div>
-          <div style={{ flex:1 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              <span style={{ fontSize:15, fontWeight:900, color:TXT }}>{selId}</span>
-              <Chip label={sol?.estado || "—"}/>
-              {sol?.alerta && <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:9.5, fontWeight:700, color:"#EF4444", background:"rgba(239,68,68,.1)", borderRadius:6, padding:"2px 8px" }}><Ico ic={ShieldAlert} size={9} color="#EF4444"/>GSD Bloqueado</span>}
-            </div>
-            <div style={{ fontSize:11, color:MUT, marginTop:3 }}>{sol?.empleado} · {sol?.provincia} · RD${sol?.monto.toLocaleString()}</div>
-          </div>
-          <div style={{ display:"flex", gap:10, flexShrink:0 }}>
-            <div style={{ textAlign:"center", padding:"8px 14px", background:BG, borderRadius:11, border:`1px solid ${BDR}` }}>
-              <div style={{ fontSize:16, fontWeight:900, color:"#06B6D4" }}>{eventosRaw.length}</div>
-              <div style={{ fontSize:9.5, color:MUT }}>Eventos</div>
-            </div>
-            <div style={{ textAlign:"center", padding:"8px 14px", background:BG, borderRadius:11, border:`1px solid ${BDR}` }}>
-              <div style={{ fontSize:16, fontWeight:900, color:"#8B5CF6" }}>{duracion}</div>
-              <div style={{ fontSize:9.5, color:MUT }}>Duración</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Progress bar */}
-        <div style={{ padding:"12px 22px", borderBottom:`1px solid ${BDR}`, background:dark?"rgba(255,255,255,.015)":"rgba(248,250,252,.8)" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-            <span style={{ fontSize:10, fontWeight:700, color:MUT, letterSpacing:.5 }}>PROGRESO DEL FLUJO</span>
-            <span style={{ fontSize:10, color:MUT, marginLeft:"auto" }}>{eventosRaw.length} / 5 etapas</span>
-          </div>
-          <div style={{ display:"flex", gap:4 }}>
-            {["creacion","validacion","revision","aprobacion","desembolso"].map((etapa, i) => {
-              const done = eventosRaw.some(e => e.tipo === etapa);
-              const blocked = eventosRaw.some(e => e.tipo === "bloqueo" || e.tipo === "rechazo");
-              const isBlock = (etapa === "revision" || etapa === "aprobacion" || etapa === "desembolso") && blocked;
-              return (
-                <div key={etapa} style={{ flex:1, height:6, borderRadius:4, background:isBlock?"#EF444430":done?accentFor(etapa):BDR, transition:"background .4s", position:"relative", overflow:"hidden" }}>
-                  {done && !isBlock && <div style={{ position:"absolute", inset:0, background:`linear-gradient(90deg,${accentFor(etapa)},${accentFor(etapa)}cc)`, borderRadius:4 }}/>}
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ display:"flex", gap:4, marginTop:4 }}>
-            {["Creación","Validación","Revisión","Aprobación","Desembolso"].map(l => (
-              <div key={l} style={{ flex:1, fontSize:8.5, color:MUT, textAlign:"center" }}>{l}</div>
-            ))}
-          </div>
-        </div>
-
-        {/* Events list */}
-        <div style={{ padding:"20px 24px", overflowY:"auto", maxHeight:460 }}>
-          {eventos.length === 0 ? (
-            <div style={{ textAlign:"center", padding:40 }}>
-              <IcoBox ic={FileSearch} size={22} color={MUT} bg={BG} pad={14} radius={16} style={{ margin:"0 auto 12px" }}/>
-              <div style={{ fontSize:13, color:MUT }}>No hay eventos que coincidan con el filtro</div>
-            </div>
-          ) : (
-            <div style={{ position:"relative" }}>
-              {/* Vertical line */}
-              <div style={{ position:"absolute", left:22, top:12, bottom:12, width:2, background:`linear-gradient(180deg,${accentFor(eventos[0]?.tipo)},${accentFor(eventos[eventos.length-1]?.tipo)})`, opacity:.25, borderRadius:2 }}/>
-
-              {eventos.map((ev, idx) => {
-                const cfg   = TIPO_EVENTO[ev.tipo] || {};
-                const Ic    = cfg.ic || FileText;
-                const color = cfg.color || "#64748B";
-                const isLast = idx === eventos.length - 1;
-                const expanded = expandedEv === ev.id;
-
-                return (
-                  <div key={ev.id} style={{ display:"flex", gap:16, marginBottom: isLast ? 0 : 20, animation:`fadeUp .3s cubic-bezier(.22,1,.36,1) ${idx * 0.05}s both` }}>
-                    {/* Icon dot */}
-                    <div style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", gap:0, zIndex:1 }}>
-                      <div style={{ width:44, height:44, borderRadius:14, background:cfg.bg||BG, border:`1.5px solid ${color}40`, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 4px 14px ${color}20`, transition:"box-shadow .2s" }}>
-                        <Ico ic={Ic} size={18} color={color}/>
-                      </div>
-                    </div>
-
-                    {/* Card */}
-                    <div
-                      onClick={() => setExpandedEv(expanded ? null : ev.id)}
-                      style={{ flex:1, background:expanded?(dark?"rgba(255,255,255,.04)":CARD2):BG, border:`1.5px solid ${expanded?color+"50":BDR}`, borderRadius:14, padding:"14px 16px", cursor:"pointer", transition:"all .22s", position:"relative", overflow:"hidden" }}
-                      onMouseOver={e => { e.currentTarget.style.borderColor = color+"40"; e.currentTarget.style.background = dark?"rgba(255,255,255,.03)":CARD2; }}
-                      onMouseOut={e  => { if (!expanded) { e.currentTarget.style.borderColor = BDR; e.currentTarget.style.background = BG; } }}
-                    >
-                      {expanded && <div style={{ position:"absolute", top:0, left:0, right:0, height:3, background:`linear-gradient(90deg,${color},${color}88)`, borderRadius:"14px 14px 0 0" }}/>}
-
-                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-                        <div style={{ flex:1 }}>
-                          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:5 }}>
-                            <span style={{ fontSize:13, fontWeight:800, color:TXT }}>{ev.accion}</span>
-                            <span style={{ fontSize:10, fontWeight:700, color, background:cfg.bg, borderRadius:6, padding:"2px 8px" }}>{cfg.label}</span>
-                          </div>
-                          <div style={{ fontSize:12, color:MUT, lineHeight:1.5 }}>{ev.detalle}</div>
-                        </div>
-                        <Ico ic={expanded?ChevronDown:ChevronRight} size={14} color={MUT} style={{ flexShrink:0, marginTop:2, transform:expanded?"rotate(0deg)":"rotate(0deg)", transition:"transform .2s" }}/>
-                      </div>
-
-                      <div style={{ display:"flex", gap:14, marginTop:9, flexWrap:"wrap" }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                          <div style={{ width:22, height:22, borderRadius:7, background:`rgba(37,99,235,.1)`, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                            <Ico ic={ev.usuario==="Sistema SIVIARD"?BrainCircuit:UserCheck} size={11} color="#2563EB"/>
-                          </div>
-                          <span style={{ fontSize:11, color:TXT, fontWeight:600 }}>{ev.usuario}</span>
-                        </div>
-                        <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                          <Ico ic={Clock} size={11} color={MUT}/>
-                          <span style={{ fontSize:11, color:MUT, fontFamily:"'JetBrains Mono',monospace" }}>{ev.ts}</span>
-                        </div>
-                        <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                          <Ico ic={ev.ip==="Sistema"?BrainCircuit:Globe} size={11} color={MUT}/>
-                          <span style={{ fontSize:11, color:MUT, fontFamily:"'JetBrains Mono',monospace" }}>{ev.ip}</span>
-                        </div>
-                      </div>
-
-                      {/* Expanded detail */}
-                      {expanded && (
-                        <div style={{ marginTop:14, paddingTop:14, borderTop:`1px dashed ${BDR}`, animation:"fadeIn .2s ease" }}>
-                          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-                            {[
-                              ["🔑 ID de evento", `EVT-${selId}-${ev.id.toString().padStart(3,"0")}`],
-                              ["🔒 Hash SHA-256", ev.hash + "•••••••••••••••••••"],
-                              ["📋 Solicitud",    selId],
-                              ["🕐 Timestamp",   ev.ts],
-                              ["👤 Actor",        ev.usuario],
-                              ["🌐 Dirección IP", ev.ip],
-                            ].map(([l,v]) => (
-                              <div key={l} style={{ background:dark?"rgba(255,255,255,.03)":"rgba(0,0,0,.02)", borderRadius:9, padding:"9px 11px" }}>
-                                <div style={{ fontSize:9.5, color:MUT, marginBottom:3 }}>{l}</div>
-                                <div style={{ fontSize:11.5, fontWeight:700, color:TXT, fontFamily:"'JetBrains Mono',monospace", wordBreak:"break-all" }}>{v}</div>
-                              </div>
-                            ))}
-                          </div>
-                          <div style={{ marginTop:10, display:"flex", gap:8, justifyContent:"flex-end" }}>
-                            <button className="act-btn" onClick={e => { e.stopPropagation(); notify(`Hash del evento ${ev.id} copiado al portapapeles`); }} style={{ padding:"7px 14px", background:"rgba(6,182,212,.1)", border:"1px solid rgba(6,182,212,.2)", borderRadius:9, color:"#06B6D4", fontSize:11, fontWeight:700, gap:5, display:"flex", alignItems:"center" }}>
-                              <Ico ic={FileSearch} size={12} color="#06B6D4"/> Ver hash completo
-                            </button>
-                            <button className="act-btn" onClick={e => { e.stopPropagation(); notify("Evento verificado — hash íntegro"); }} style={{ padding:"7px 14px", background:"rgba(16,185,129,.1)", border:"1px solid rgba(16,185,129,.2)", borderRadius:9, color:"#10B981", fontSize:11, fontWeight:700, gap:5, display:"flex", alignItems:"center" }}>
-                              <Ico ic={ShieldCheck} size={12} color="#10B981"/> Verificar integridad
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div style={{ padding:"12px 22px", borderTop:`1px solid ${BDR}`, background:CARD2, display:"flex", alignItems:"center", gap:10 }}>
-          <Ico ic={FileLock2} size={12} color="#10B981"/>
-          <span style={{ fontSize:10.5, color:"#10B981", fontWeight:600 }}>Registro inmutable · Los eventos no pueden ser modificados ni eliminados</span>
-          <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:6 }}>
-            <div style={{ width:6, height:6, borderRadius:"50%", background:"#10B981", animation:"statusPulse 2.5s ease infinite" }}/>
-            <span style={{ fontSize:10, color:MUT, fontFamily:"'JetBrains Mono',monospace" }}>SIVIARD AUDIT ENGINE v2</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  );
-}
-
-/* ─── AUDITORIA ─── */
-function Auditoria({ ctx }) {
-  const { BG, CARD, CARD2, BDR, TXT, MUT, dark, menu, setMenu, q, setQ, fEst, setFEst, selSol, setSelSol, step, setStep, dnAlert, setDnAlert, submitting, setSubmitting, submitted, setSubmitted, form, setForm, flujoSteps, setFlujoSteps, flujoModalOpen, setFlujoModalOpen, editingStep, setEditingStep, stepForm, setStepForm, tooltipStep, tooltipPos, notify, resolveIc, FILTERED, ICON_CATALOGUE, COLOR_PALETTE, openNewStep, openEditStep, saveStep, deleteStep, moveStep } = ctx;
-  return (
-  <div style={{ animation:"fadeUp .42s cubic-bezier(.22,1,.36,1)", fontFamily:"'DM Sans',system-ui,sans-serif" }}>
-    <div style={{ marginBottom:26 }}>
-      <div style={{ display:"flex", alignItems:"center", gap:11, marginBottom:5 }}>
-        <div style={{ width:4, height:24, borderRadius:2, background:"linear-gradient(180deg,#8B5CF6,#06B6D4)" }} />
-        <h2 style={{ fontSize:23, fontWeight:900, color:TXT, letterSpacing:-.7 }}>Módulo de Auditoría</h2>
-      </div>
-      <p style={{ color:MUT, fontSize:13, paddingLeft:15 }}>Bitácora completa · Trazabilidad total del sistema</p>
-    </div>
-    <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:13, marginBottom:22 }}>
-      {[["248","Eventos Totales",Database,"#2563EB"],["3","Alertas Activas",TriangleAlert,"#EF4444"],["12","Usuarios Activos",UsersRound,"#10B981"],["94.2%","Cumplimiento",Gauge,"#F59E0B"]].map(([v,l,Ic,c])=>(
-        <div key={l} className="hover-lift" style={{ background:CARD, borderRadius:16, padding:22, border:`1px solid ${BDR}`, display:"flex", gap:15, alignItems:"center" }}>
-          <IcoBox ic={Ic} size={22} color={c} bg={`${c}18`} pad={11} radius={14} glow />
           <div>
             <div style={{ fontSize:24, fontWeight:900, color:c, letterSpacing:-1.2 }}>{v}</div>
             <div style={{ fontSize:11, color:MUT, marginTop:2 }}>{l}</div>
@@ -1992,64 +1744,292 @@ function Auditoria({ ctx }) {
         </div>
       ))}
     </div>
-    <div style={{ background:CARD, borderRadius:18, border:`1px solid ${BDR}`, overflow:"hidden" }}>
-      <div style={{ padding:"16px 22px", borderBottom:`1px solid ${BDR}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <IcoBox ic={Radar} size={16} color="#8B5CF6" bg="rgba(139,92,246,.1)" pad={9} radius={11} glow />
-          <span style={{ fontSize:13, fontWeight:800, color:TXT }}>Bitácora del Sistema</span>
-        </div>
-        <div style={{ display:"flex", gap:8 }}>
-          <button className="act-btn" style={{ padding:"8px 15px",background:"rgba(37,99,235,.08)",border:`1px solid rgba(37,99,235,.15)`,borderRadius:10,color:"#2563EB",fontSize:12,fontWeight:700,justifyContent:"center" }}>
-            <Ico ic={Download} size={13} color="#2563EB"/> CSV
-          </button>
-          <button className="act-btn" style={{ padding:"8px 15px",background:"rgba(239,68,68,.08)",border:`1px solid rgba(239,68,68,.15)`,borderRadius:10,color:"#EF4444",fontSize:12,fontWeight:700,justifyContent:"center" }}>
-            <Ico ic={FileBarChart2} size={13} color="#EF4444"/> PDF
-          </button>
+
+    {/* TAB BAR */}
+    <div style={{ display:"flex", gap:4, paddingBottom:0, borderBottom:`1px solid ${BDR}`, marginBottom:20 }}>
+      {tabBtn("bitacora",      "Bitácora del Sistema",       Radar,      "#8B5CF6")}
+      {tabBtn("trazabilidad",  "Trazabilidad por Solicitud", GitBranch,  "#06B6D4")}
+    </div>
+
+    {/* ════════ TAB: BITÁCORA ════════ */}
+    {tab === "bitacora" && (
+      <div style={{ animation:"fadeUp .28s cubic-bezier(.22,1,.36,1)" }}>
+        <div style={{ background:CARD, borderRadius:18, border:`1px solid ${BDR}`, overflow:"hidden" }}>
+          <div style={{ padding:"14px 20px", borderBottom:`1px solid ${BDR}`, background:CARD2, display:"flex", alignItems:"center", gap:10 }}>
+            <IcoBox ic={Radar} size={15} color="#8B5CF6" bg="rgba(139,92,246,.1)" pad={8} radius={10} glow />
+            <span style={{ fontSize:13, fontWeight:800, color:TXT }}>Bitácora del Sistema</span>
+            <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:6 }}>
+              <div style={{ width:6, height:6, borderRadius:"50%", background:"#10B981", animation:"statusPulse 2.5s ease infinite" }}/>
+              <span style={{ fontSize:10, color:MUT, fontFamily:"'JetBrains Mono',monospace" }}>EN VIVO · SIVIARD AUDIT ENGINE v2</span>
+            </div>
+          </div>
+          <table style={{ width:"100%", borderCollapse:"collapse" }}>
+            <thead>
+              <tr style={{ background:CARD2 }}>
+                {[["Timestamp",Clock],["Usuario",UserCheck],["Acción",Bolt],["Recurso",FileText],["IP",CircuitBoard],["Nivel",ShieldCheck]].map(([h,Ic])=>(
+                  <th key={h} style={{ padding:"12px 16px", textAlign:"left" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:10, fontWeight:700, color:MUT, letterSpacing:.6 }}>
+                      <Ico ic={Ic} size={11} color={MUT}/>{h}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {AUDIT_LOG.map(l=>(
+                <tr key={l.id} className="row" style={{ borderTop:`1px solid ${BDR}` }}>
+                  <td style={{ padding:"13px 16px", fontSize:11, fontFamily:"'JetBrains Mono',monospace", color:MUT }}>{l.ts}</td>
+                  <td style={{ padding:"13px 16px" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:9 }}>
+                      <div style={{ width:28, height:28, borderRadius:9, background:"rgba(37,99,235,.08)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                        <Ico ic={l.usuario==="Sistema SIVIARD"?BrainCircuit:UserCheck} size={13} color="#2563EB"/>
+                      </div>
+                      <span style={{ fontSize:12, fontWeight:600, color:TXT }}>{l.usuario}</span>
+                    </div>
+                  </td>
+                  <td style={{ padding:"13px 16px" }}>
+                    <span style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"4px 10px", borderRadius:20, fontSize:11, fontWeight:700,
+                      background:l.accion.includes("RECHAZO")?"#FEE2E2":["APROBACIÓN","DESEMBOLSO"].includes(l.accion)?"#D1FAE5":"#DBEAFE",
+                      color:l.accion.includes("RECHAZO")?"#991B1B":["APROBACIÓN","DESEMBOLSO"].includes(l.accion)?"#065F46":"#1E40AF" }}>
+                      <Ico ic={l.accion.includes("RECHAZO")?XCircle:l.accion==="APROBACIÓN"?CircleCheck:l.accion==="DESEMBOLSO"?DollarSign:l.accion==="SOLICITUD"?FilePlus2:l.accion==="REVISIÓN"?ScanLine:KeyRound}
+                        size={11} color={l.accion.includes("RECHAZO")?"#991B1B":["APROBACIÓN","DESEMBOLSO"].includes(l.accion)?"#065F46":"#1E40AF"}/>
+                      {l.accion}
+                    </span>
+                  </td>
+                  <td style={{ padding:"13px 16px", fontSize:12, fontFamily:"'JetBrains Mono',monospace", color:"#2563EB", fontWeight:700 }}>{l.recurso}</td>
+                  <td style={{ padding:"13px 16px" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      <Ico ic={l.ip==="Sistema"?BrainCircuit:Globe} size={12} color={MUT}/>
+                      <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", color:MUT }}>{l.ip}</span>
+                    </div>
+                  </td>
+                  <td style={{ padding:"13px 16px" }}><Chip label={l.nivel}/></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ padding:"12px 20px", borderTop:`1px solid ${BDR}`, background:CARD2, display:"flex", alignItems:"center", gap:8 }}>
+            <Ico ic={FileLock2} size={12} color="#10B981"/>
+            <span style={{ fontSize:10.5, color:"#10B981", fontWeight:600 }}>Registros inmutables · No pueden ser modificados ni eliminados</span>
+          </div>
         </div>
       </div>
-      <table style={{ width:"100%", borderCollapse:"collapse" }}>
-        <thead>
-          <tr style={{ background:CARD2 }}>
-            {[["Timestamp",Clock],["Usuario",UserCheck],["Acción",Bolt],["Recurso",FileText],["IP",CircuitBoard],["Nivel",ShieldCheck]].map(([h,Ic])=>(
-              <th key={h} style={{ padding:"12px 16px", textAlign:"left" }}>
-                <div style={{ display:"flex",alignItems:"center",gap:5,fontSize:10,fontWeight:700,color:MUT,letterSpacing:.6 }}>
-                  <Ico ic={Ic} size={11} color={MUT}/>{h}
-                </div>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {AUDIT_LOG.map(l=>(
-            <tr key={l.id} className="row" style={{ borderTop:`1px solid ${BDR}` }}>
-              <td style={{ padding:"13px 16px",fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:MUT }}>{l.ts}</td>
-              <td style={{ padding:"13px 16px" }}>
-                <div style={{ display:"flex",alignItems:"center",gap:9 }}>
-                  <div style={{ width:28,height:28,borderRadius:9,background:"rgba(37,99,235,.08)",display:"flex",alignItems:"center",justifyContent:"center" }}>
-                    <Ico ic={l.usuario==="Sistema SIVIARD"?BrainCircuit:UserCheck} size={13} color="#2563EB"/>
+    )}
+
+    {/* ════════ TAB: TRAZABILIDAD ════════ */}
+    {tab === "trazabilidad" && (
+      <div style={{ animation:"fadeUp .28s cubic-bezier(.22,1,.36,1)", display:"grid", gridTemplateColumns:"270px 1fr", gap:18 }}>
+
+        {/* LEFT: solicitud picker */}
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          <div style={{ background:CARD, borderRadius:16, border:`1px solid ${BDR}`, overflow:"hidden" }}>
+            <div style={{ padding:"13px 15px", borderBottom:`1px solid ${BDR}`, background:CARD2 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:9 }}>
+                <IcoBox ic={ClipboardList} size={13} color="#06B6D4" bg="rgba(6,182,212,.1)" pad={7} radius={8} glow />
+                <span style={{ fontSize:12, fontWeight:800, color:TXT }}>Solicitudes</span>
+              </div>
+              <div style={{ position:"relative" }}>
+                <div style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)" }}><Ico ic={Search} size={12} color={MUT}/></div>
+                <input value={busq} onChange={e=>setBusq(e.target.value)} placeholder="Buscar evento..."
+                  style={{ width:"100%", padding:"8px 10px 8px 28px", borderRadius:9, border:`1px solid ${BDR}`, background:BG, color:TXT, fontSize:11 }}/>
+              </div>
+            </div>
+            <div style={{ maxHeight:380, overflowY:"auto" }}>
+              {SOLICITUDES.map(s => {
+                const evs = HISTORIAL_EVENTOS[s.id] || [];
+                const last = evs[evs.length - 1];
+                const act  = selId === s.id;
+                return (
+                  <div key={s.id} onClick={()=>{ setSelId(s.id); setExpandedEv(null); setFilterTipo("Todos"); }}
+                    style={{ padding:"12px 15px", borderBottom:`1px solid ${BDR}`, cursor:"pointer", background:act?"rgba(6,182,212,.06)":"transparent", borderLeft:`3px solid ${act?"#06B6D4":"transparent"}`, transition:"all .18s" }}
+                    onMouseOver={e=>!act&&(e.currentTarget.style.background=dark?"rgba(255,255,255,.03)":"rgba(0,0,0,.02)")}
+                    onMouseOut={e=>!act&&(e.currentTarget.style.background="transparent")}>
+                    <div style={{ display:"flex", justifyContent:"space-between", gap:6 }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:11.5, fontWeight:800, color:act?"#06B6D4":TXT, fontFamily:"'JetBrains Mono',monospace" }}>{s.id}</div>
+                        <div style={{ fontSize:11, color:MUT, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.empleado}</div>
+                        <div style={{ fontSize:10, color:MUT, opacity:.7, marginTop:1 }}>{s.provincia} · RD${s.monto.toLocaleString()}</div>
+                      </div>
+                      <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4, flexShrink:0 }}>
+                        <Chip label={s.estado}/>
+                        <span style={{ fontSize:9.5, color:MUT, fontFamily:"'JetBrains Mono',monospace" }}>{evs.length} ev.</span>
+                      </div>
+                    </div>
+                    {act && last && (
+                      <div style={{ marginTop:6, display:"flex", alignItems:"center", gap:5 }}>
+                        <div style={{ width:5, height:5, borderRadius:"50%", background:accentFor(last.tipo), boxShadow:`0 0 5px ${accentFor(last.tipo)}` }}/>
+                        <span style={{ fontSize:9.5, color:accentFor(last.tipo), fontWeight:700 }}>{last.accion}</span>
+                      </div>
+                    )}
                   </div>
-                  <span style={{ fontSize:12,fontWeight:600,color:TXT }}>{l.usuario}</span>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Filtro tipo */}
+          <div style={{ background:CARD, borderRadius:14, border:`1px solid ${BDR}`, padding:"13px 15px" }}>
+            <div style={{ fontSize:10.5, fontWeight:700, color:MUT, marginBottom:9, letterSpacing:.5 }}>FILTRAR POR TIPO</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+              {["Todos", ...Object.values(TIPO_EVENTO).map(t=>t.label)].map(tipo => {
+                const cfg = Object.values(TIPO_EVENTO).find(t=>t.label===tipo);
+                const act = filterTipo === tipo;
+                return (
+                  <button key={tipo} onClick={()=>setFilterTipo(tipo)}
+                    style={{ display:"flex", alignItems:"center", gap:7, padding:"6px 10px", borderRadius:8, border:`1px solid ${act?(cfg?.color||"#06B6D4"):BDR}`, background:act?(cfg?.bg||"rgba(6,182,212,.1)"):BG, cursor:"pointer", color:act?(cfg?.color||"#06B6D4"):MUT, fontSize:11.5, fontWeight:act?700:500, transition:"all .15s" }}>
+                    {tipo==="Todos" ? <Ico ic={Layers} size={11} color={act?"#06B6D4":MUT}/> : <div style={{ width:7,height:7,borderRadius:"50%",background:cfg?.color||"#64748B",flexShrink:0 }}/>}
+                    {tipo}
+                    <span style={{ marginLeft:"auto", fontSize:10, opacity:.6 }}>{tipo==="Todos"?eventosRaw.length:eventosRaw.filter(e=>TIPO_EVENTO[e.tipo]?.label===tipo).length}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT: timeline panel */}
+        <div style={{ background:CARD, borderRadius:18, border:`1px solid ${BDR}`, overflow:"hidden" }}>
+          {/* Header */}
+          <div style={{ padding:"15px 20px", borderBottom:`1px solid ${BDR}`, background:CARD2, display:"flex", alignItems:"center", gap:12 }}>
+            <div style={{ width:42,height:42,borderRadius:13,background:`linear-gradient(135deg,${accentFor(estadoFinal)},${accentFor(estadoFinal)}99)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:`0 6px 16px ${accentFor(estadoFinal)}35` }}>
+              <span style={{ fontSize:13,fontWeight:900,color:"#fff" }}>{sol?.avatar}</span>
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:9 }}>
+                <span style={{ fontSize:15, fontWeight:900, color:TXT }}>{selId}</span>
+                <Chip label={sol?.estado||"—"}/>
+                {sol?.alerta && <span style={{ display:"inline-flex",alignItems:"center",gap:4,fontSize:9.5,fontWeight:700,color:"#EF4444",background:"rgba(239,68,68,.1)",borderRadius:6,padding:"2px 8px" }}><Ico ic={ShieldAlert} size={9} color="#EF4444"/>GSD</span>}
+              </div>
+              <div style={{ fontSize:11, color:MUT, marginTop:2 }}>{sol?.empleado} · {sol?.provincia} · RD${sol?.monto.toLocaleString()}</div>
+            </div>
+            <div style={{ display:"flex", gap:9, flexShrink:0 }}>
+              {[["Eventos", eventosRaw.length, "#06B6D4"],["Duración", duracion, "#8B5CF6"]].map(([l,v,c])=>(
+                <div key={l} style={{ textAlign:"center", padding:"7px 13px", background:BG, borderRadius:10, border:`1px solid ${BDR}` }}>
+                  <div style={{ fontSize:16, fontWeight:900, color:c }}>{v}</div>
+                  <div style={{ fontSize:9.5, color:MUT }}>{l}</div>
                 </div>
-              </td>
-              <td style={{ padding:"13px 16px" }}>
-                <span style={{ display:"inline-flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:20,fontSize:11,fontWeight:700, background:l.accion.includes("RECHAZO")?"#FEE2E2":["APROBACIÓN","DESEMBOLSO"].includes(l.accion)?"#D1FAE5":"#DBEAFE", color:l.accion.includes("RECHAZO")?"#991B1B":["APROBACIÓN","DESEMBOLSO"].includes(l.accion)?"#065F46":"#1E40AF" }}>
-                  <Ico ic={l.accion.includes("RECHAZO")?XCircle:l.accion==="APROBACIÓN"?CircleCheck:l.accion==="DESEMBOLSO"?DollarSign:l.accion==="SOLICITUD"?FilePlus2:l.accion==="REVISIÓN"?ScanLine:KeyRound} size={11} color={l.accion.includes("RECHAZO")?"#991B1B":["APROBACIÓN","DESEMBOLSO"].includes(l.accion)?"#065F46":"#1E40AF"}/>
-                  {l.accion}
-                </span>
-              </td>
-              <td style={{ padding:"13px 16px",fontSize:12,fontFamily:"'JetBrains Mono',monospace",color:"#2563EB",fontWeight:700 }}>{l.recurso}</td>
-              <td style={{ padding:"13px 16px" }}>
-                <div style={{ display:"flex",alignItems:"center",gap:6 }}>
-                  <Ico ic={l.ip==="Sistema"?BrainCircuit:Globe} size={12} color={MUT}/>
-                  <span style={{ fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:MUT }}>{l.ip}</span>
-                </div>
-              </td>
-              <td style={{ padding:"13px 16px" }}><Chip label={l.nivel}/></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          <div style={{ padding:"11px 20px", borderBottom:`1px solid ${BDR}`, background:dark?"rgba(255,255,255,.015)":"rgba(248,250,252,.8)" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+              <span style={{ fontSize:10, fontWeight:700, color:MUT, letterSpacing:.5 }}>PROGRESO DEL FLUJO</span>
+              <span style={{ fontSize:10, color:MUT, marginLeft:"auto" }}>{eventosRaw.length} / 5 etapas</span>
+            </div>
+            <div style={{ display:"flex", gap:4 }}>
+              {["creacion","validacion","revision","aprobacion","desembolso"].map(etapa => {
+                const done    = eventosRaw.some(e => e.tipo === etapa);
+                const blocked = eventosRaw.some(e => e.tipo === "bloqueo" || e.tipo === "rechazo");
+                const isBlock = ["revision","aprobacion","desembolso"].includes(etapa) && blocked;
+                return (
+                  <div key={etapa} style={{ flex:1, height:6, borderRadius:4, background:isBlock?"#EF444430":done?accentFor(etapa):BDR, position:"relative", overflow:"hidden" }}>
+                    {done && !isBlock && <div style={{ position:"absolute",inset:0,background:`linear-gradient(90deg,${accentFor(etapa)},${accentFor(etapa)}cc)`,borderRadius:4 }}/>}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display:"flex", gap:4, marginTop:4 }}>
+              {["Creación","Validación","Revisión","Aprobación","Desembolso"].map(l=>(
+                <div key={l} style={{ flex:1, fontSize:8.5, color:MUT, textAlign:"center" }}>{l}</div>
+              ))}
+            </div>
+          </div>
+
+          {/* Events */}
+          <div style={{ padding:"18px 22px", overflowY:"auto", maxHeight:420 }}>
+            {eventos.length === 0 ? (
+              <div style={{ textAlign:"center", padding:40 }}>
+                <IcoBox ic={FileSearch} size={22} color={MUT} bg={BG} pad={14} radius={16} style={{ margin:"0 auto 12px" }}/>
+                <div style={{ fontSize:13, color:MUT }}>No hay eventos que coincidan</div>
+              </div>
+            ) : (
+              <div style={{ position:"relative" }}>
+                <div style={{ position:"absolute", left:22, top:12, bottom:12, width:2, background:`linear-gradient(180deg,${accentFor(eventos[0]?.tipo)},${accentFor(eventos[eventos.length-1]?.tipo)})`, opacity:.2, borderRadius:2 }}/>
+                {eventos.map((ev, idx) => {
+                  const cfg  = TIPO_EVENTO[ev.tipo] || {};
+                  const color = cfg.color || "#64748B";
+                  const Ic    = cfg.ic    || FileText;
+                  const exp   = expandedEv === ev.id;
+                  return (
+                    <div key={ev.id} style={{ display:"flex", gap:14, marginBottom:idx===eventos.length-1?0:18, animation:`fadeUp .3s cubic-bezier(.22,1,.36,1) ${idx*.05}s both` }}>
+                      <div style={{ flexShrink:0, zIndex:1 }}>
+                        <div style={{ width:44,height:44,borderRadius:13,background:cfg.bg||BG,border:`1.5px solid ${color}40`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 4px 12px ${color}18` }}>
+                          <Ico ic={Ic} size={18} color={color}/>
+                        </div>
+                      </div>
+                      <div onClick={()=>setExpandedEv(exp?null:ev.id)}
+                        style={{ flex:1, background:exp?(dark?"rgba(255,255,255,.04)":CARD2):BG, border:`1.5px solid ${exp?color+"50":BDR}`, borderRadius:13, padding:"13px 15px", cursor:"pointer", transition:"all .2s", position:"relative", overflow:"hidden" }}
+                        onMouseOver={e=>{e.currentTarget.style.borderColor=color+"40"; e.currentTarget.style.background=dark?"rgba(255,255,255,.03)":CARD2;}}
+                        onMouseOut={e=>{if(!exp){e.currentTarget.style.borderColor=BDR; e.currentTarget.style.background=BG;}}}>
+                        {exp && <div style={{ position:"absolute",top:0,left:0,right:0,height:3,background:`linear-gradient(90deg,${color},${color}88)`,borderRadius:"13px 13px 0 0" }}/>}
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+                          <div style={{ flex:1 }}>
+                            <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:4 }}>
+                              <span style={{ fontSize:13, fontWeight:800, color:TXT }}>{ev.accion}</span>
+                              <span style={{ fontSize:10, fontWeight:700, color, background:cfg.bg, borderRadius:6, padding:"2px 8px" }}>{cfg.label}</span>
+                            </div>
+                            <div style={{ fontSize:12, color:MUT, lineHeight:1.5 }}>{ev.detalle}</div>
+                          </div>
+                          <Ico ic={exp?ChevronDown:ChevronRight} size={14} color={MUT} style={{ flexShrink:0, marginTop:2 }}/>
+                        </div>
+                        <div style={{ display:"flex", gap:12, marginTop:8, flexWrap:"wrap" }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                            <div style={{ width:20,height:20,borderRadius:6,background:"rgba(37,99,235,.1)",display:"flex",alignItems:"center",justifyContent:"center" }}>
+                              <Ico ic={ev.usuario==="Sistema SIVIARD"?BrainCircuit:UserCheck} size={10} color="#2563EB"/>
+                            </div>
+                            <span style={{ fontSize:11, color:TXT, fontWeight:600 }}>{ev.usuario}</span>
+                          </div>
+                          <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                            <Ico ic={Clock} size={10} color={MUT}/>
+                            <span style={{ fontSize:11, color:MUT, fontFamily:"'JetBrains Mono',monospace" }}>{ev.ts}</span>
+                          </div>
+                          <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                            <Ico ic={ev.ip==="Sistema"?BrainCircuit:Globe} size={10} color={MUT}/>
+                            <span style={{ fontSize:11, color:MUT, fontFamily:"'JetBrains Mono',monospace" }}>{ev.ip}</span>
+                          </div>
+                        </div>
+                        {exp && (
+                          <div style={{ marginTop:12, paddingTop:12, borderTop:`1px dashed ${BDR}`, animation:"fadeIn .2s ease" }}>
+                            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:10 }}>
+                              {[["🔑 ID evento",`EVT-${selId}-${ev.id.toString().padStart(3,"0")}`],["🔒 Hash",ev.hash+"•••••••••"],["📋 Solicitud",selId],["🕐 Timestamp",ev.ts],["👤 Actor",ev.usuario],["🌐 IP",ev.ip]].map(([l,v])=>(
+                                <div key={l} style={{ background:dark?"rgba(255,255,255,.03)":"rgba(0,0,0,.02)", borderRadius:8, padding:"8px 10px" }}>
+                                  <div style={{ fontSize:9.5, color:MUT, marginBottom:2 }}>{l}</div>
+                                  <div style={{ fontSize:11, fontWeight:700, color:TXT, fontFamily:"'JetBrains Mono',monospace", wordBreak:"break-all" }}>{v}</div>
+                                </div>
+                              ))}
+                            </div>
+                            <div style={{ display:"flex", gap:7, justifyContent:"flex-end" }}>
+                              <button className="act-btn" onClick={e=>{e.stopPropagation();notify("Hash copiado al portapapeles");}} style={{ padding:"6px 12px",background:"rgba(6,182,212,.1)",border:"1px solid rgba(6,182,212,.2)",borderRadius:8,color:"#06B6D4",fontSize:11,fontWeight:700,gap:5,display:"flex",alignItems:"center" }}>
+                                <Ico ic={FileSearch} size={11} color="#06B6D4"/> Ver hash
+                              </button>
+                              <button className="act-btn" onClick={e=>{e.stopPropagation();notify("Evento verificado — hash íntegro");}} style={{ padding:"6px 12px",background:"rgba(16,185,129,.1)",border:"1px solid rgba(16,185,129,.2)",borderRadius:8,color:"#10B981",fontSize:11,fontWeight:700,gap:5,display:"flex",alignItems:"center" }}>
+                                <Ico ic={ShieldCheck} size={11} color="#10B981"/> Verificar
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div style={{ padding:"11px 20px", borderTop:`1px solid ${BDR}`, background:CARD2, display:"flex", alignItems:"center", gap:9 }}>
+            <Ico ic={FileLock2} size={12} color="#10B981"/>
+            <span style={{ fontSize:10.5, color:"#10B981", fontWeight:600 }}>Registro inmutable · Los eventos no pueden ser modificados ni eliminados</span>
+            <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:6 }}>
+              <div style={{ width:6,height:6,borderRadius:"50%",background:"#10B981",animation:"statusPulse 2.5s ease infinite" }}/>
+              <span style={{ fontSize:10, color:MUT, fontFamily:"'JetBrains Mono',monospace" }}>SIVIARD AUDIT ENGINE v2</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
   </div>
   );
 }
@@ -2922,8 +2902,7 @@ export default function SIVIARD() {
     { id:"solicitud",   label:"Nueva Solicitud", ic:FilePlus2,   color:"#06B6D4", bg:"rgba(6,182,212,.18)",  desc:"Crear viático" },
     { id:"solicitudes", label:"Solicitudes",     ic:Waypoints,   color:"#10B981", bg:"rgba(16,185,129,.18)", desc:"Gestión completa" },
     { id:"aprobacion",  label:"Aprobaciones",    ic:FileCheck2,  color:"#F59E0B", bg:"rgba(245,158,11,.18)", desc:"Flujo jerárquico" },
-    { id:"historial",   label:"Trazabilidad",    ic:GitBranch,   color:"#06B6D4", bg:"rgba(6,182,212,.18)",  desc:"Historial por solicitud" },
-    { id:"auditoria",   label:"Auditoría",       ic:Radar,       color:"#8B5CF6", bg:"rgba(139,92,246,.18)", desc:"Trazabilidad total" },
+    { id:"auditoria",   label:"Auditoría",       ic:Radar,       color:"#8B5CF6", bg:"rgba(139,92,246,.18)", desc:"Auditoría & Trazabilidad" },
     { id:"reportes",    label:"Reportes",        ic:ChartArea,   color:"#EF4444", bg:"rgba(239,68,68,.18)",  desc:"Estadísticas" },
     { id:"usuarios",    label:"Usuarios",        ic:UsersRound,  color:"#06B6D4", bg:"rgba(6,182,212,.18)",  desc:"Gestión de accesos" },
     { id:"config",      label:"Configuración",   ic:Sliders,     color:"#94A3B8", bg:"rgba(148,163,184,.18)",desc:"Parámetros" },
@@ -3032,7 +3011,7 @@ export default function SIVIARD() {
 
   /* ── PAGES ── */
   const ctx = { BG, CARD, CARD2, BDR, TXT, MUT, dark, menu, setMenu, q, setQ, fEst, setFEst, selSol, setSelSol, step, setStep, dnAlert, setDnAlert, submitting, setSubmitting, submitted, setSubmitted, form, setForm, flujoSteps, setFlujoSteps, flujoModalOpen, setFlujoModalOpen, editingStep, setEditingStep, stepForm, setStepForm, tooltipStep, tooltipPos, notify, resolveIc, FILTERED, ICON_CATALOGUE, COLOR_PALETTE, openNewStep, openEditStep, saveStep, deleteStep, moveStep, usuarios, setUsuarios };
-  const PAGE_MAP = { dashboard:Dashboard, solicitud:SolicitudForm, solicitudes:Solicitudes, aprobacion:Aprobacion, historial:Historial, auditoria:Auditoria, reportes:Reportes, usuarios:Usuarios, config:Config };
+  const PAGE_MAP = { dashboard:Dashboard, solicitud:SolicitudForm, solicitudes:Solicitudes, aprobacion:Aprobacion, auditoria:Auditoria, reportes:Reportes, usuarios:Usuarios, config:Config };
   const CurPage = PAGE_MAP[menu] || Dashboard;
   const curNav = NAV.find(n=>n.id===menu);
 
